@@ -73,14 +73,23 @@ void E131Output::OpenDatagram() {
 
     if (_datagram != nullptr) return;
 
+    // See ArtNetOutput::OpenDatagram: a successful open has to be able to clear
+    // an earlier failure.
+    _ok = true;
+
     _datagram = new sockets::UDPSocket();
     if (_datagram == nullptr) {
         spdlog::error("E131Output: Error creating datagram object.");
+        _ok = false;
     }
     else if (!_datagram->Bind(GetForceLocalIPToUse(), 0, false)) {
-        spdlog::error("E131Output: Error opening datagram. {}", _datagram->LastError());
+        int suppressed = 0;
+        if (ShouldLogOpenFailure(suppressed)) {
+            spdlog::error("E131Output: Error opening datagram to {}. {}{}", _remoteIp, _datagram->LastError(), OpenFailureSuffix(suppressed));
+        }
         delete _datagram;
         _datagram = nullptr;
+        _ok = false;
     }
 }
 #pragma endregion
@@ -388,10 +397,11 @@ void E131Output::StartFrame(long msec) {
         return _fppProxyOutput->StartFrame(msec);
     }
 
-    if (_datagram == nullptr && OutputManager::IsRetryOpen()) {
+    if (_datagram == nullptr && ShouldAttemptReopen(msec)) {
         OpenDatagram();
         if (_ok) {
-            spdlog::debug("E131Output: Open retry successful");
+            ResetSendRecovery();
+            spdlog::debug("E131Output: reopened the socket to {} universe {}", _remoteIp, GetUniverse());
         }
     }
 
@@ -413,9 +423,19 @@ void E131Output::EndFrame(int suppressFrames) {
 
     if (_changed || NeedToOutput(suppressFrames)) {
         _data[111] = _sequenceNum;
-        _datagram->SendTo(_remoteIp, E131_PORT, _data, E131_PACKET_LEN - (512 - _channels));
+        const bool sent = _datagram->SendTo(_remoteIp, E131_PORT, _data, E131_PACKET_LEN - (512 - _channels));
         _sequenceNum = _sequenceNum == 255 ? 0 : _sequenceNum + 1;
         FrameOutput();
+        if (NoteSendResult(sent)) {
+            spdlog::warn("E1.31 output to {} universe {}: {} sends failed in a row ({}). Closing the socket; it will be reopened automatically.",
+                         _remoteIp, GetUniverse(), SEND_FAILURES_BEFORE_CLOSE, _datagram->LastError());
+            // Release only the socket. Close() on these classes tears down more
+            // than that - DDPOutput::Close() also frees the channel buffer, which
+            // would silently discard every channel written until outputs were
+            // cycled - and recovery must leave the output otherwise intact.
+            delete _datagram;
+            _datagram = nullptr;
+        }
     }
     else {
         SkipFrame();

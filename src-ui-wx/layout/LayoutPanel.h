@@ -65,6 +65,9 @@ class ViewObject;
 class wxListEvent;
 class wxMouseEvent;
 class wxBitmapButton;
+class wxToggleButton;
+class wxTimer;
+class wxTimerEvent;
 class wxPropertyGrid;
 class wxPropertyGridEvent;
 class NewModelBitmapButton;
@@ -608,6 +611,23 @@ class LayoutPanel: public wxPanel
         std::unique_ptr<ModelPropertyAdapter> _propertyAdapter;
         std::unique_ptr<ViewObjectPropertyAdapter> _viewObjectAdapter;
         BaseObject *highlightedBaseObject = nullptr;
+
+        // --- Highlight mode (see LayoutPanel.cpp) -------------------------
+        wxToggleButton* ButtonHighlight = nullptr;
+        wxTimer* _highlightTimer = nullptr;
+        bool _highlightActive = false;
+        bool _highlightWasOutputting = false;
+        uint64_t _highlightSig = 0;                // identity of what is lit, not just the pointer
+        bool _highlightNeedsBlank = false;
+        wxButton* ButtonHighlightColour = nullptr;
+        wxColour _highlightColour = *wxWHITE;
+        void OnHighlightColourClicked(wxCommandEvent& event);
+        void OnHighlightToggled(wxCommandEvent& event);
+        void OnHighlightTimer(wxTimerEvent& event);
+        bool HighlightEngage();
+        void HighlightDisengage(bool restoreOutputs);
+        void HighlightSendFrame();
+        // -------------------------------------------------------------------
         wxTreeListItem selectedPrimaryTreeItem = nullptr;
         bool selectionLatched = false;
         // Previous hover state, used to detect transitions so

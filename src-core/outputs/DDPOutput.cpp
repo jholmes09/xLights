@@ -39,14 +39,22 @@ void DDPOutput::OpenDatagram() {
 
     if (_datagram != nullptr) return;
 
+    // See ArtNetOutput::OpenDatagram: a successful open has to be able to clear
+    // an earlier failure.
+    _ok = true;
+
     _datagram = new sockets::UDPSocket();
     if (_datagram == nullptr) {
         spdlog::error("Error creating DDP datagram object for {}.", _ip);
         _ok = false;
+        return;   // the Bind below would dereference null
     }
 
     if (!_datagram->Bind(GetForceLocalIP(), 0, false)) {
-        spdlog::error("Error initialising DDP datagram for {}: {}", _ip, _datagram->LastError());
+        int suppressed = 0;
+        if (ShouldLogOpenFailure(suppressed)) {
+            spdlog::error("Error initialising DDP datagram for {}: {}{}", _ip, _datagram->LastError(), OpenFailureSuffix(suppressed));
+        }
         delete _datagram;
         _datagram = nullptr;
         _ok = false;
@@ -432,10 +440,11 @@ void DDPOutput::StartFrame(long msec) {
     if (!_enabled) return;
     if (_fppProxyOutput) {
         _fppProxyOutput->StartFrame(msec);
-    } else if (_datagram == nullptr && OutputManager::IsRetryOpen()) {
+    } else if (_datagram == nullptr && ShouldAttemptReopen(msec)) {
         OpenDatagram();
         if (_ok) {
-            spdlog::debug("DDPOutput: Open retry successful");
+            ResetSendRecovery();
+            spdlog::debug("DDPOutput: reopened the socket to {}", _remoteIp);
         }
     }
 
@@ -455,6 +464,10 @@ void DDPOutput::EndFrame(int suppressFrames) {
         int32_t index = 0;
         int32_t chan = _keepChannelNumbers ? (_startChannel - 1) : 0;
         int32_t tosend = _channels;
+        // A DDP frame is several packets. The socket must not be closed part way
+        // through the loop: the remaining iterations would dereference a null
+        // _datagram. Collect the result and act once the frame is complete.
+        bool allSent = true;
 
         while (tosend > 0) {
             int32_t thissend = (tosend < _channelsPerPacket) ? tosend : _channelsPerPacket;
@@ -484,7 +497,9 @@ void DDPOutput::EndFrame(int suppressFrames) {
 
             memcpy(&_data[10], _fulldata + index, thissend);
 
-            _datagram->SendTo(_remoteIp, DDP_PORT, &_data[0], DDP_PACKET_LEN - (1440 - thissend));
+            if (!_datagram->SendTo(_remoteIp, DDP_PORT, &_data[0], DDP_PACKET_LEN - (1440 - thissend))) {
+                allSent = false;
+            }
             _sequenceNum = _sequenceNum == 15 ? 1 : _sequenceNum + 1;
 
             tosend -= thissend;
@@ -492,6 +507,16 @@ void DDPOutput::EndFrame(int suppressFrames) {
             chan += thissend;
         }
         FrameOutput();
+        if (NoteSendResult(allSent)) {
+            spdlog::warn("DDP output to {}: {} frames failed to send in a row ({}). Closing the socket; it will be reopened automatically.",
+                         _remoteIp, SEND_FAILURES_BEFORE_CLOSE, _datagram->LastError());
+            // Release only the socket. Close() on these classes tears down more
+            // than that - DDPOutput::Close() also frees the channel buffer, which
+            // would silently discard every channel written until outputs were
+            // cycled - and recovery must leave the output otherwise intact.
+            delete _datagram;
+            _datagram = nullptr;
+        }
     } else {
         SkipFrame();
     }
