@@ -36,6 +36,24 @@
 #define PIXLITE_PORT 49150
 
 #pragma region Encode and Decode
+// The Mk3 JSON API's "startUni" is one HIGHER than the Art-Net port address the
+// controller actually listens on and shows on its own screen. xLights puts its
+// universe number straight onto the Art-Net wire with no adjustment
+// (ArtNetOutput.cpp:290), so an unadjusted upload leaves the controller listening
+// one below what xLights is transmitting and the port goes dark.
+//
+// Measured 2026-09-09 on a PixLite E4-S Mk3: xLights universe 6101 uploaded
+// unadjusted, the controller displayed 6100, and the port stayed dark until
+// xLights was moved down to 6100 to match what the controller had landed on.
+//
+// sACN is 1-based on both sides and needs no adjustment. This applies to the Mk3
+// JSON API only; the Mk1/Mk2 binary packet path is a different API and is left
+// alone because there is no evidence about it.
+static int Mk3UniverseOffset(int protocol)
+{
+    return protocol == 1 ? 1 : 0;   // 1 == Art-Net, 0 == sACN
+}
+
 int Pixlite16::DecodeStringPortProtocol(const std::string& protocol)
 {
     std::string p = Lower(protocol);
@@ -1137,7 +1155,7 @@ bool Pixlite16::GetMK3Config()
 
                 for (uint32_t i = 0; i < _config._numOutputs; ++i) {
                     _config._outputPixels[i] = jsonVal["result"]["config"]["pixPort"]["pixCount"][i].get<int>();
-                    _config._outputUniverse[i] = jsonVal["result"]["config"]["pixPort"]["startUni"][i].get<int>();
+                    _config._outputUniverse[i] = jsonVal["result"]["config"]["pixPort"]["startUni"][i].get<int>() - Mk3UniverseOffset(_config._protocol);
                     _config._outputStartChannel[i] = jsonVal["result"]["config"]["pixPort"]["startCh"][i].get<int>();
                     _config._outputNullPixels[i] = jsonVal["result"]["config"]["pixPort"]["nullPix"][i].get<int>();
                     _config._outputZigZag[i] = jsonVal["result"]["config"]["pixPort"]["zigZag"][i].get<int>();
@@ -1378,7 +1396,13 @@ bool Pixlite16::SendMk3Config(bool logresult) const
         request += fmt::format("\"freq\":{},", Mk3FrequencyForProtocol(_config._protocolName));
     }
     request += fmt::format("\"expand\":{},", expanded ? "true" : "false");
-    request += "\"inFormat\":\"8Bit\",\"pixsSpanUni\":true},";
+    // pixsSpanUni was hardcoded true, so every single upload silently switched
+    // "split pixels across universes" back ON regardless of how the controller
+    // was set. Send back what it already has: GetMK3Config() reads the live
+    // value into _pixelsCanBeSplit before any upload can run.
+    request += "\"inFormat\":\"8Bit\",\"pixsSpanUni\":";
+    request += _config._pixelsCanBeSplit ? "true" : "false";
+    request += "},";
 
     // pix port
     request += "\"pixPort\":{";
@@ -1393,7 +1417,7 @@ bool Pixlite16::SendMk3Config(bool logresult) const
     request += "],";
     request += "\"startUni\": [";
     for (uint8_t i = 0; i < pp; ++i) {
-        request += fmt::format("{}", _config._outputUniverse[i]);
+        request += fmt::format("{}", _config._outputUniverse[i] + Mk3UniverseOffset(_config._protocol));
         if (i != pp - 1) {
             request += ",";
         }

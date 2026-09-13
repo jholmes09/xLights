@@ -39,15 +39,24 @@ void ArtNetOutput::OpenDatagram() {
 
     if (_datagram != nullptr) return;
 
+    // Assume success: without this, _ok stays false for the life of the object
+    // after the first failed open, so a later successful reopen still reads as
+    // broken.
+    _ok = true;
+
     _datagram = new sockets::UDPSocket();
     if (_datagram == nullptr) {
         spdlog::error("Error creating Artnet datagram object for {} {}:{}:{}.", _ip, GetArtNetNet(), GetArtNetSubnet(), GetArtNetUniverse());
         _ok = false;
+        return;   // the Bind below would dereference null
     }
 
     const uint16_t localPort = _forceSourcePort ? ARTNET_PORT : 0;
     if (!_datagram->Bind(GetForceLocalIPToUse(), localPort, _forceSourcePort)) {
-        spdlog::error("Error initialising Artnet datagram for {} {}:{}:{}. {}", _ip, GetArtNetNet(), GetArtNetSubnet(), GetArtNetUniverse(), _datagram->LastError());
+        int suppressed = 0;
+        if (ShouldLogOpenFailure(suppressed)) {
+            spdlog::error("Error initialising Artnet datagram for {} {}:{}:{}. {}{}", _ip, GetArtNetNet(), GetArtNetSubnet(), GetArtNetUniverse(), _datagram->LastError(), OpenFailureSuffix(suppressed));
+        }
         delete _datagram;
         _datagram = nullptr;
         _ok = false;
@@ -350,10 +359,11 @@ void ArtNetOutput::StartFrame(long msec) {
 
     if (!_enabled) return;
 
-    if (_datagram == nullptr && OutputManager::IsRetryOpen()) {
+    if (_datagram == nullptr && ShouldAttemptReopen(msec)) {
         OpenDatagram();
         if (_ok) {
-            spdlog::debug("ArtNetOutput: Open retry successful");
+            ResetSendRecovery();
+            spdlog::debug("ArtNetOutput: reopened the socket to {} universe {}", _remoteIp, GetUniverse());
         }
     }
 
@@ -366,10 +376,20 @@ void ArtNetOutput::EndFrame(int suppressFrames) {
 
     if (_changed || NeedToOutput(suppressFrames)) {
         _data[12] = _sequenceNum;
-        _datagram->SendTo(_remoteIp, ARTNET_PORT, _data, ARTNET_PACKET_LEN - (512 - _channels));
+        const bool sent = _datagram->SendTo(_remoteIp, ARTNET_PORT, _data, ARTNET_PACKET_LEN - (512 - _channels));
         _sequenceNum = _sequenceNum == 255 ? 0 : _sequenceNum + 1;
         FrameOutput();
         _changed = false;
+        if (NoteSendResult(sent)) {
+            spdlog::warn("ArtNet output to {} universe {}: {} sends failed in a row ({}). Closing the socket; it will be reopened automatically.",
+                         _remoteIp, GetUniverse(), SEND_FAILURES_BEFORE_CLOSE, _datagram->LastError());
+            // Release only the socket. Close() on these classes tears down more
+            // than that - DDPOutput::Close() also frees the channel buffer, which
+            // would silently discard every channel written until outputs were
+            // cycled - and recovery must leave the output otherwise intact.
+            delete _datagram;
+            _datagram = nullptr;
+        }
     }
     else {
         SkipFrame();

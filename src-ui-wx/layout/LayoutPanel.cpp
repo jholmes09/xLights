@@ -89,6 +89,9 @@
 #include "model/ImportPreviewsModelsDialog.h"
 #include "layout/ViewsModelsPanel.h"
 #include "outputs/OutputManager.h"
+#include "models/Model.h"
+#include "models/DMX/DmxModel.h"
+#include <wx/timer.h>
 #include "outputs/Output.h"
 #include "outputs/Controller.h"
 #include "controllers/ControllerCaps.h"
@@ -1095,6 +1098,22 @@ LayoutPanel::LayoutPanel(wxWindow* parent, xLightsFrame *xl, wxPanel* sequencer)
         layoutControlsBar->SetMinSize(wxSize(-1, 68));
     }
     PreviewGLPanel->GetSizer()->Add(layoutControlsBar, 0, wxEXPAND | wxALIGN_BOTTOM, 3);
+
+    // Highlight toggle, borrowed from lighting consoles. Sits in the top bar
+    // right after the model-type buttons. Latching: while it is down, whichever
+    // prop is selected is driven to full white on the real output.
+    ButtonHighlight = new wxToggleButton(PreviewGLPanel, wxID_ANY, _("Highlight"));
+    ButtonHighlight->SetToolTip("Light the selected prop white on the real output so you can find it. "
+                                "Everything else goes dark while this is on.");
+    ButtonHighlight->Bind(wxEVT_TOGGLEBUTTON, &LayoutPanel::OnHighlightToggled, this);
+    TopBarSizer->Insert(1, ButtonHighlight, 0, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 3);
+
+    // Swatch beside it: the colour Highlight drives the prop to. White by default.
+    ButtonHighlightColour = new wxButton(PreviewGLPanel, wxID_ANY, "", wxDefaultPosition, PreviewGLPanel->FromDIP(wxSize(30, -1)));
+    ButtonHighlightColour->SetBackgroundColour(_highlightColour);
+    ButtonHighlightColour->SetToolTip("Colour Highlight uses. Click to change.");
+    ButtonHighlightColour->Bind(wxEVT_BUTTON, &LayoutPanel::OnHighlightColourClicked, this);
+    TopBarSizer->Insert(2, ButtonHighlightColour, 0, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 3);
     PreviewGLPanel->Layout();
 
     UpdateDirectoriesFooter();
@@ -1386,8 +1405,268 @@ void LayoutPanel::UpdateDirectoriesFooter()
     LabelDirectoriesFooter->GetParent()->Layout();
 }
 
+
+// ---------------------------------------------------------------------------
+// Highlight mode
+//
+// Borrowed from lighting consoles (ETC Eos "Highlight"): latch the button and
+// whichever prop you select is driven to full white on the real output, so you
+// can walk the site and see which one you are pointing at. Everything else is
+// held dark, which is the whole point - an unambiguous "that one".
+//
+// Why we take the wire: xLightsFrame::OutputTimer writes the entire channel
+// buffer every tick while a sequence tab is current, and re-sends the existing
+// buffer otherwise. If it keeps running underneath us it overwrites our frame
+// and the prop goes dark or flickers. So we take exclusive ownership for as
+// long as we are latched, the same way CustomModelBuilderDialog does, and we
+// hand it back on every exit path.
+// ---------------------------------------------------------------------------
+
+static constexpr int HIGHLIGHT_FRAME_MS = 50;             // 20fps, as PixelTestDialog
+
+bool LayoutPanel::HighlightEngage()
+{
+    if (_highlightActive) return true;
+    if (xlights == nullptr) return false;
+
+    // Never fight an actually-playing show: taking the wire mid-sequence would
+    // black out everything except the prop under the cursor.
+    // playType uses the PLAY_TYPE_* values, NOT the SeqPlayerStates enum - they
+    // only agree at 0. Paused counts as not playing on purpose, because pausing
+    // and walking out to the set is exactly when this button is wanted, and so
+    // does PLAY_TYPE_EFFECT, which merely means an effect is selected.
+    if (xlights->GetPlayStatus() == PLAY_TYPE_MODEL) {
+        wxMessageBox("Stop the sequence before turning Highlight on.",
+                     "Highlight", wxOK | wxICON_INFORMATION, this);
+        return false;
+    }
+
+    OutputManager* om = xlights->GetOutputManager();
+    if (om == nullptr) return false;
+
+    _highlightWasOutputting = om->IsOutputting();
+    if (_highlightWasOutputting) {
+        xlights->StopOutputTimer();               // outputs already open, take the timer
+    } else if (!xlights->ForceEnableOutputs(false, true)) {
+        // startTimer=false: we drive the frames ourselves.
+        // skipAutoUpload=true: clicking a highlight button must never push
+        // configuration to live controllers. If a controller needs its config,
+        // the user turns outputs on the normal way first.
+        return false;
+    }
+    om->SuspendAll(false);                        // a stale suspend means nothing transmits
+
+    if (_highlightTimer == nullptr) {
+        _highlightTimer = new wxTimer(this);
+        Bind(wxEVT_TIMER, &LayoutPanel::OnHighlightTimer, this, _highlightTimer->GetId());
+    }
+    _highlightActive = true;
+    _highlightSig = 0;
+    _highlightNeedsBlank = true;   // blank on the first frame even with nothing selected
+    _highlightTimer->Start(HIGHLIGHT_FRAME_MS, wxTIMER_CONTINUOUS);
+    xlights->SetStatusText("Highlight on - select a prop to light it white.");
+    return true;
+}
+
+void LayoutPanel::HighlightDisengage(bool restoreOutputs)
+{
+    if (!_highlightActive) return;
+    _highlightActive = false;
+
+    if (_highlightTimer != nullptr) _highlightTimer->Stop();
+
+    OutputManager* om = (xlights != nullptr) ? xlights->GetOutputManager() : nullptr;
+    if (om != nullptr) {
+        // Blackout what we lit, and make sure the zeros actually go out.
+        // Only while we still hold the wire: AllOff() does not check whether
+        // outputs are open, and LOROutput::AllOff sleeps 50ms per network.
+        if (om->IsOutputting()) {
+            om->StartFrame(0);
+            om->AllOff(false);
+            om->EndFrame();
+        }
+
+        if (restoreOutputs && xlights != nullptr) {
+            if (_highlightWasOutputting) {
+                xlights->StartOutputTimer();      // hand the wire back
+            } else {
+                xlights->DisableOutputs();        // we opened it, we close it
+            }
+        }
+    }
+    // If we did not restore, we no longer know who owns the outputs, so forget
+    // that we ever opened them; a later cycle must not act on stale ownership.
+    if (!restoreOutputs) _highlightWasOutputting = false;
+    _highlightSig = 0;
+    _highlightNeedsBlank = false;
+    if (ButtonHighlight != nullptr && ButtonHighlight->GetValue()) {
+        ButtonHighlight->SetValue(false);
+    }
+    if (xlights != nullptr) xlights->SetStatusText("");
+}
+
+void LayoutPanel::HighlightSendFrame()
+{
+    if (xlights == nullptr) return;
+    OutputManager* om = xlights->GetOutputManager();
+    if (om == nullptr) return;
+
+    BaseObject* sel = IsSelectedBaseObjectValid() ? selectedBaseObject : nullptr;
+    Model* m = dynamic_cast<Model*>(sel);
+
+    // Decide whether this prop can be lit at all, and say why when it cannot.
+    std::string status;
+    if (m != nullptr) {
+        // Groups and submodels never carry a controller port and their
+        // CouldComputeStartChannel is left false by RecalcStartChannels, so the
+        // port-based and start-channel checks below must not be applied to them.
+        // The rest of this file exempts them the same way.
+        const bool isGroup = (m->GetDisplayAs() == DisplayAsType::ModelGroup);
+        const bool isSub = (m->GetDisplayAs() == DisplayAsType::SubModel);
+
+        if (dynamic_cast<DmxModel*>(m) != nullptr || (!isGroup && !isSub && m->IsSerialProtocol())) {
+            // A DMX fixture's "nodes" are its raw DMX channels. Writing 255 to
+            // all of them slams a moving head to its stops, fires relays and
+            // drives servos to end of travel. Never do that to find a prop.
+            // Tested by class, not by IsPixelProtocol(): that asks whether a
+            // controller PORT is set, so it also refuses every prop addressed by
+            // absolute channel, #universe:ch or a chain, plus all groups.
+            status = "Highlight: " + m->GetName() + " is a DMX fixture, skipping it.";
+            m = nullptr;
+        } else if (!isGroup && !isSub && (!m->CouldComputeStartChannel || !m->IsValidStartChannelString())) {
+            // An unresolved start channel leaves every node at absolute 0, which
+            // would light the head of the first controller - someone else's prop,
+            // and exactly the prop you were trying to identify.
+            status = "Highlight: " + m->GetName() + " has an unresolved start channel, skipping it.";
+            m = nullptr;
+        } else if (m->GetNodeCount() == 0) {
+            status = "Highlight: " + m->GetName() + " has no nodes.";
+            m = nullptr;
+        } else {
+            status = "Highlight: " + m->GetName();
+        }
+    } else if (sel != nullptr) {
+        status = "Highlight: that selection is not a prop.";
+    } else {
+        status = "Highlight on - select a prop to light it white.";
+    }
+
+    // Blank the wire only when what we are lighting actually changed. AllOff()
+    // is not a cheap memset on every output type: LOROutput::AllOff writes every
+    // channel to a serial port and then sleeps 50ms, so calling it every frame
+    // would wedge the UI on any show with an LOR network.
+    //
+    // The key is the channel range, not the object pointer. Editing the selected
+    // prop's start channel or node count rewrites its channels IN PLACE without
+    // replacing the object, and a pointer key would leave the prop's old
+    // channels white while the new ones lit too - two props on for one click,
+    // during the exact workflow this button exists for.
+    uint64_t sig = 0;
+    if (m != nullptr) {
+        const uint32_t sigNodes = m->GetNodeCount();
+        sig = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(m));
+        sig = sig * 1000003ull + sigNodes;
+        sig = sig * 1000003ull + static_cast<uint64_t>(static_cast<uint32_t>(m->NodeStartChannel(0)));
+        sig = sig * 1000003ull + static_cast<uint64_t>(static_cast<uint32_t>(m->NodeEndChannel(sigNodes - 1)));
+    }
+    const bool changed = _highlightNeedsBlank || (sig != _highlightSig);
+
+    om->StartFrame(0);
+    if (changed) om->AllOff(false);
+    if (m != nullptr) {
+        const xlColor hl = wxColourToXlColor(_highlightColour);
+        unsigned char nodeBuf[16];
+        const uint32_t nodes = m->GetNodeCount();
+        for (uint32_t n = 0; n < nodes; ++n) {
+            // Per node, and using this node's own end channel. A model group's
+            // nodes are its members' nodes, and their channel widths differ; one
+            // shared width walks off the end of the prop onto its neighbour.
+            // Walking nodes rather than first..last also matters, because
+            // multi-string and custom models have gaps that belong to other props.
+            const int32_t first = m->NodeStartChannel(n);
+            const int32_t last = m->NodeEndChannel(n);
+            const int32_t width = last - first + 1;
+            NodeBaseClass* node = m->GetNode(n);
+            if (node == nullptr || width <= 0 || width > (int32_t)sizeof(nodeBuf)) continue;
+
+            // Let the node lay the colour out. It knows its own channel order and
+            // type, so RGB, GRB, RGBW and single-colour props all come out right
+            // without this code knowing anything about colour order.
+            // GetForChannels only writes the offsets it uses, so the buffer has to
+            // be cleared first or stale bytes go on the wire.
+            for (size_t z = 0; z < sizeof(nodeBuf); ++z) nodeBuf[z] = 0;
+            node->SetColor(hl);
+            node->GetForChannels(nodeBuf);
+            for (int32_t k = 0; k < width; ++k) {
+                om->SetOneChannel(first + k, nodeBuf[k]);
+            }
+        }
+    }
+    om->EndFrame();
+
+    if (changed) {
+        _highlightSig = sig;
+        _highlightNeedsBlank = false;
+        xlights->SetStatusText(status);
+    }
+}
+
+void LayoutPanel::OnHighlightTimer(wxTimerEvent& event)
+{
+    if (!_highlightActive) return;
+
+    // If the user left the Layout tab we must not keep holding the wire - the
+    // sequencer would have no output timer and the show would sit dark.
+    if (!IsShownOnScreen()) {
+        HighlightDisengage(true);
+        return;
+    }
+
+    // Something else can take the wire out from under us: Tools > Test, the
+    // Output To Lights toolbar toggle, a show folder change, the submodel and
+    // faces dialogs. Staying latched would leave the button down and the status
+    // line lying while nothing reaches the hardware.
+    OutputManager* om = (xlights != nullptr) ? xlights->GetOutputManager() : nullptr;
+    if (om != nullptr && !om->IsOutputting()) {
+        HighlightDisengage(false);   // we no longer own it, so restore nothing
+        xlights->SetStatusText("Highlight turned off - something else took over the lighting output.");
+        return;
+    }
+    HighlightSendFrame();
+}
+
+void LayoutPanel::OnHighlightColourClicked(wxCommandEvent& event)
+{
+    auto const& [res, colour] = xlColourData::INSTANCE.ShowColorDialog(this, _highlightColour);
+    if (res == wxID_OK) {
+        _highlightColour = colour;
+        if (ButtonHighlightColour != nullptr) {
+            ButtonHighlightColour->SetBackgroundColour(_highlightColour);
+            ButtonHighlightColour->Refresh();
+        }
+        // The selection did not change, so force the next frame to repaint the
+        // prop rather than waiting for the user to click something else.
+        _highlightNeedsBlank = true;
+    }
+}
+
+void LayoutPanel::OnHighlightToggled(wxCommandEvent& event)
+{
+    if (ButtonHighlight != nullptr && ButtonHighlight->GetValue()) {
+        if (!HighlightEngage()) ButtonHighlight->SetValue(false);
+    } else {
+        HighlightDisengage(true);
+    }
+}
+
 LayoutPanel::~LayoutPanel()
 {
+    HighlightDisengage(true);
+    if (_highlightTimer != nullptr) {
+        _highlightTimer->Stop();
+        delete _highlightTimer;
+        _highlightTimer = nullptr;
+    }
     if (layout_mgr != nullptr) {
         layout_mgr->UnInit();
         delete layout_mgr;

@@ -845,15 +845,24 @@ int32_t UDControllerPort::Channels() const {
     if (_virtualStrings.size() == 0) {
         if (_models.size() == 0) return 0;
 
-        if (_separateUniverses || _packedStrings || AtLeastOneModelIsUsingSmartRemote()) {
-            int c = 0;
-            for (const auto& it : _models) {
-                c += it->Channels();
-            }
-            return c;
-        } else {
+        // Serial ports keep the start-to-end span: GetStartChannel() deliberately
+        // backs up over the first model's DMX channel offset, so the span is the
+        // number of channels the port actually occupies.
+        if (_type == "Serial" && !_separateUniverses && !_packedStrings && !AtLeastOneModelIsUsingSmartRemote()) {
             return GetEndChannel() - GetStartChannel() + 1;
         }
+
+        // Everything else sums what is really on the port. The span is only
+        // equal to the sum when the models are channel-contiguous. A model
+        // that declares multiple strings gets one contiguous channel block
+        // which is then sliced across consecutive ports, so the slice living
+        // on the NEXT port sits in the gap between this port's models. The
+        // span swallows it and the port reads high by exactly that slice.
+        int c = 0;
+        for (const auto& it : _models) {
+            c += it->Channels();
+        }
+        return c;
     }
     else {
         int c = 0;

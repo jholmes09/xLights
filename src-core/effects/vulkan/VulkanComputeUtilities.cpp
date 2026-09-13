@@ -982,6 +982,21 @@ bool VulkanPixelBufferComputeData::doTransitions(PixelBufferClass* pixelBuffer, 
     }
     li->maskSize = 0; // start with empty mask
 
+    // Transition Blur is implemented only on the CPU path: LayerInfo::blurMaskToAlpha
+    // for the mask transitions, and the blur argument to blobs(). These kernels carry
+    // no blur parameter, so rather than silently dropping the softening the user
+    // asked for, decline the job and let the CPU implementation take this frame.
+    //
+    // Declined HERE, after the mask buffer allocation above and deliberately not at
+    // the top of the function: li->maskMaxSize is shared with the CPU path. Bailing
+    // out before the allocation would let the CPU raise maskMaxSize while this
+    // backend's maskBuffer stayed unallocated, and a later UNBLURRED transition on
+    // the same layer would then map a buffer that was never created.
+    if ((li->inMaskFactor < 1.0 && li->inTransitionBlur > 0) ||
+        (li->outMaskFactor < 1.0 && li->outTransitionBlur > 0)) {
+        return false;
+    }
+
     const auto& tiIn = u.transitions.find(li->inTransitionType);
     if (tiIn == u.transitions.end()) {
         return false;
