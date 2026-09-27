@@ -1,0 +1,841 @@
+From 1d36d8140b7a36ada5f05b9f6b7799e8934f9c97 Mon Sep 17 00:00:00 2001
+From: Jeffrey Holmes <jeffreyholmes@Mac.localdomain>
+Date: Sun, 13 Sep 2026 18:22:54 -0400
+Subject: [PATCH] JHP: IP output socket recovery, Pixlite16, LayoutPanel
+
+---
+ src-core/controllers/ControllerUploadData.cpp |  23 +-
+ src-core/controllers/Pixlite16.cpp            |  30 +-
+ .../effects/metal/MetalComputeUtilities.mm    |  15 +
+ .../effects/vulkan/VulkanComputeUtilities.cpp |  15 +
+ src-core/outputs/ArtNetOutput.cpp             |  28 +-
+ src-core/outputs/DDPOutput.cpp                |  33 ++-
+ src-core/outputs/E131Output.cpp               |  28 +-
+ src-core/outputs/IPOutput.h                   |  99 +++++++
+ src-ui-wx/layout/LayoutPanel.cpp              | 279 ++++++++++++++++++
+ src-ui-wx/layout/LayoutPanel.h                |  20 ++
+ 10 files changed, 548 insertions(+), 22 deletions(-)
+
+diff --git a/src-core/controllers/ControllerUploadData.cpp b/src-core/controllers/ControllerUploadData.cpp
+index 65ef7a5ff..5134ea0fd 100644
+--- a/src-core/controllers/ControllerUploadData.cpp
++++ b/src-core/controllers/ControllerUploadData.cpp
+@@ -845,15 +845,24 @@ int32_t UDControllerPort::Channels() const {
+     if (_virtualStrings.size() == 0) {
+         if (_models.size() == 0) return 0;
+ 
+-        if (_separateUniverses || _packedStrings || AtLeastOneModelIsUsingSmartRemote()) {
+-            int c = 0;
+-            for (const auto& it : _models) {
+-                c += it->Channels();
+-            }
+-            return c;
+-        } else {
++        // Serial ports keep the start-to-end span: GetStartChannel() deliberately
++        // backs up over the first model's DMX channel offset, so the span is the
++        // number of channels the port actually occupies.
++        if (_type == "Serial" && !_separateUniverses && !_packedStrings && !AtLeastOneModelIsUsingSmartRemote()) {
+             return GetEndChannel() - GetStartChannel() + 1;
+         }
++
++        // Everything else sums what is really on the port. The span is only
++        // equal to the sum when the models are channel-contiguous. A model
++        // that declares multiple strings gets one contiguous channel block
++        // which is then sliced across consecutive ports, so the slice living
++        // on the NEXT port sits in the gap between this port's models. The
++        // span swallows it and the port reads high by exactly that slice.
++        int c = 0;
++        for (const auto& it : _models) {
++            c += it->Channels();
++        }
++        return c;
+     }
+     else {
+         int c = 0;
+diff --git a/src-core/controllers/Pixlite16.cpp b/src-core/controllers/Pixlite16.cpp
+index a4fd2a7cf..995a1a001 100644
+--- a/src-core/controllers/Pixlite16.cpp
++++ b/src-core/controllers/Pixlite16.cpp
+@@ -36,6 +36,24 @@
+ #define PIXLITE_PORT 49150
+ 
+ #pragma region Encode and Decode
++// The Mk3 JSON API's "startUni" is one HIGHER than the Art-Net port address the
++// controller actually listens on and shows on its own screen. xLights puts its
++// universe number straight onto the Art-Net wire with no adjustment
++// (ArtNetOutput.cpp:290), so an unadjusted upload leaves the controller listening
++// one below what xLights is transmitting and the port goes dark.
++//
++// Measured 2026-09-09 on a PixLite E4-S Mk3: xLights universe 6101 uploaded
++// unadjusted, the controller displayed 6100, and the port stayed dark until
++// xLights was moved down to 6100 to match what the controller had landed on.
++//
++// sACN is 1-based on both sides and needs no adjustment. This applies to the Mk3
++// JSON API only; the Mk1/Mk2 binary packet path is a different API and is left
++// alone because there is no evidence about it.
++static int Mk3UniverseOffset(int protocol)
++{
++    return protocol == 1 ? 1 : 0;   // 1 == Art-Net, 0 == sACN
++}
++
+ int Pixlite16::DecodeStringPortProtocol(const std::string& protocol)
+ {
+     std::string p = Lower(protocol);
+@@ -1137,7 +1155,7 @@ bool Pixlite16::GetMK3Config()
+ 
+                 for (uint32_t i = 0; i < _config._numOutputs; ++i) {
+                     _config._outputPixels[i] = jsonVal["result"]["config"]["pixPort"]["pixCount"][i].get<int>();
+-                    _config._outputUniverse[i] = jsonVal["result"]["config"]["pixPort"]["startUni"][i].get<int>();
++                    _config._outputUniverse[i] = jsonVal["result"]["config"]["pixPort"]["startUni"][i].get<int>() - Mk3UniverseOffset(_config._protocol);
+                     _config._outputStartChannel[i] = jsonVal["result"]["config"]["pixPort"]["startCh"][i].get<int>();
+                     _config._outputNullPixels[i] = jsonVal["result"]["config"]["pixPort"]["nullPix"][i].get<int>();
+                     _config._outputZigZag[i] = jsonVal["result"]["config"]["pixPort"]["zigZag"][i].get<int>();
+@@ -1378,7 +1396,13 @@ bool Pixlite16::SendMk3Config(bool logresult) const
+         request += fmt::format("\"freq\":{},", Mk3FrequencyForProtocol(_config._protocolName));
+     }
+     request += fmt::format("\"expand\":{},", expanded ? "true" : "false");
+-    request += "\"inFormat\":\"8Bit\",\"pixsSpanUni\":true},";
++    // pixsSpanUni was hardcoded true, so every single upload silently switched
++    // "split pixels across universes" back ON regardless of how the controller
++    // was set. Send back what it already has: GetMK3Config() reads the live
++    // value into _pixelsCanBeSplit before any upload can run.
++    request += "\"inFormat\":\"8Bit\",\"pixsSpanUni\":";
++    request += _config._pixelsCanBeSplit ? "true" : "false";
++    request += "},";
+ 
+     // pix port
+     request += "\"pixPort\":{";
+@@ -1393,7 +1417,7 @@ bool Pixlite16::SendMk3Config(bool logresult) const
+     request += "],";
+     request += "\"startUni\": [";
+     for (uint8_t i = 0; i < pp; ++i) {
+-        request += fmt::format("{}", _config._outputUniverse[i]);
++        request += fmt::format("{}", _config._outputUniverse[i] + Mk3UniverseOffset(_config._protocol));
+         if (i != pp - 1) {
+             request += ",";
+         }
+diff --git a/src-core/effects/metal/MetalComputeUtilities.mm b/src-core/effects/metal/MetalComputeUtilities.mm
+index 66e82f932..0c66bf45f 100644
+--- a/src-core/effects/metal/MetalComputeUtilities.mm
++++ b/src-core/effects/metal/MetalComputeUtilities.mm
+@@ -440,6 +440,21 @@ bool MetalPixelBufferComputeData::doTransitions(PixelBufferClass *pixelBuffer, i
+     }
+     li->maskSize = 0; // start with empty mask
+ 
++    // Transition Blur is implemented only on the CPU path: LayerInfo::blurMaskToAlpha
++    // for the mask transitions, and the blur argument to blobs(). These kernels carry
++    // no blur parameter, so rather than silently dropping the softening the user
++    // asked for, decline the job and let the CPU implementation take this frame.
++    //
++    // Declined HERE, after the mask buffer allocation above and deliberately not at
++    // the top of the function: li->maskMaxSize is shared with the CPU path. Bailing
++    // out before the allocation would let the CPU raise maskMaxSize while this
++    // backend's maskBuffer stayed unallocated, and a later UNBLURRED transition on
++    // the same layer would then map a buffer that was never created.
++    if ((li->inMaskFactor < 1.0 && li->inTransitionBlur > 0) ||
++        (li->outMaskFactor < 1.0 && li->outTransitionBlur > 0)) {
++        return false;
++    }
++
+     const auto &tiIn = MetalComputeUtilities::INSTANCE.transitions.find(li->inTransitionType);
+     if (tiIn == MetalComputeUtilities::INSTANCE.transitions.end()) {
+         return false;
+diff --git a/src-core/effects/vulkan/VulkanComputeUtilities.cpp b/src-core/effects/vulkan/VulkanComputeUtilities.cpp
+index 303923591..e8551f2dd 100644
+--- a/src-core/effects/vulkan/VulkanComputeUtilities.cpp
++++ b/src-core/effects/vulkan/VulkanComputeUtilities.cpp
+@@ -982,6 +982,21 @@ bool VulkanPixelBufferComputeData::doTransitions(PixelBufferClass* pixelBuffer,
+     }
+     li->maskSize = 0; // start with empty mask
+ 
++    // Transition Blur is implemented only on the CPU path: LayerInfo::blurMaskToAlpha
++    // for the mask transitions, and the blur argument to blobs(). These kernels carry
++    // no blur parameter, so rather than silently dropping the softening the user
++    // asked for, decline the job and let the CPU implementation take this frame.
++    //
++    // Declined HERE, after the mask buffer allocation above and deliberately not at
++    // the top of the function: li->maskMaxSize is shared with the CPU path. Bailing
++    // out before the allocation would let the CPU raise maskMaxSize while this
++    // backend's maskBuffer stayed unallocated, and a later UNBLURRED transition on
++    // the same layer would then map a buffer that was never created.
++    if ((li->inMaskFactor < 1.0 && li->inTransitionBlur > 0) ||
++        (li->outMaskFactor < 1.0 && li->outTransitionBlur > 0)) {
++        return false;
++    }
++
+     const auto& tiIn = u.transitions.find(li->inTransitionType);
+     if (tiIn == u.transitions.end()) {
+         return false;
+diff --git a/src-core/outputs/ArtNetOutput.cpp b/src-core/outputs/ArtNetOutput.cpp
+index 2c9eae4d8..a43d9862e 100644
+--- a/src-core/outputs/ArtNetOutput.cpp
++++ b/src-core/outputs/ArtNetOutput.cpp
+@@ -39,15 +39,24 @@ void ArtNetOutput::OpenDatagram() {
+ 
+     if (_datagram != nullptr) return;
+ 
++    // Assume success: without this, _ok stays false for the life of the object
++    // after the first failed open, so a later successful reopen still reads as
++    // broken.
++    _ok = true;
++
+     _datagram = new sockets::UDPSocket();
+     if (_datagram == nullptr) {
+         spdlog::error("Error creating Artnet datagram object for {} {}:{}:{}.", _ip, GetArtNetNet(), GetArtNetSubnet(), GetArtNetUniverse());
+         _ok = false;
++        return;   // the Bind below would dereference null
+     }
+ 
+     const uint16_t localPort = _forceSourcePort ? ARTNET_PORT : 0;
+     if (!_datagram->Bind(GetForceLocalIPToUse(), localPort, _forceSourcePort)) {
+-        spdlog::error("Error initialising Artnet datagram for {} {}:{}:{}. {}", _ip, GetArtNetNet(), GetArtNetSubnet(), GetArtNetUniverse(), _datagram->LastError());
++        int suppressed = 0;
++        if (ShouldLogOpenFailure(suppressed)) {
++            spdlog::error("Error initialising Artnet datagram for {} {}:{}:{}. {}{}", _ip, GetArtNetNet(), GetArtNetSubnet(), GetArtNetUniverse(), _datagram->LastError(), OpenFailureSuffix(suppressed));
++        }
+         delete _datagram;
+         _datagram = nullptr;
+         _ok = false;
+@@ -350,10 +359,11 @@ void ArtNetOutput::StartFrame(long msec) {
+ 
+     if (!_enabled) return;
+ 
+-    if (_datagram == nullptr && OutputManager::IsRetryOpen()) {
++    if (_datagram == nullptr && ShouldAttemptReopen(msec)) {
+         OpenDatagram();
+         if (_ok) {
+-            spdlog::debug("ArtNetOutput: Open retry successful");
++            ResetSendRecovery();
++            spdlog::debug("ArtNetOutput: reopened the socket to {} universe {}", _remoteIp, GetUniverse());
+         }
+     }
+ 
+@@ -366,10 +376,20 @@ void ArtNetOutput::EndFrame(int suppressFrames) {
+ 
+     if (_changed || NeedToOutput(suppressFrames)) {
+         _data[12] = _sequenceNum;
+-        _datagram->SendTo(_remoteIp, ARTNET_PORT, _data, ARTNET_PACKET_LEN - (512 - _channels));
++        const bool sent = _datagram->SendTo(_remoteIp, ARTNET_PORT, _data, ARTNET_PACKET_LEN - (512 - _channels));
+         _sequenceNum = _sequenceNum == 255 ? 0 : _sequenceNum + 1;
+         FrameOutput();
+         _changed = false;
++        if (NoteSendResult(sent)) {
++            spdlog::warn("ArtNet output to {} universe {}: {} sends failed in a row ({}). Closing the socket; it will be reopened automatically.",
++                         _remoteIp, GetUniverse(), SEND_FAILURES_BEFORE_CLOSE, _datagram->LastError());
++            // Release only the socket. Close() on these classes tears down more
++            // than that - DDPOutput::Close() also frees the channel buffer, which
++            // would silently discard every channel written until outputs were
++            // cycled - and recovery must leave the output otherwise intact.
++            delete _datagram;
++            _datagram = nullptr;
++        }
+     }
+     else {
+         SkipFrame();
+diff --git a/src-core/outputs/DDPOutput.cpp b/src-core/outputs/DDPOutput.cpp
+index 9047cc5fd..9416fa729 100644
+--- a/src-core/outputs/DDPOutput.cpp
++++ b/src-core/outputs/DDPOutput.cpp
+@@ -39,14 +39,22 @@ void DDPOutput::OpenDatagram() {
+ 
+     if (_datagram != nullptr) return;
+ 
++    // See ArtNetOutput::OpenDatagram: a successful open has to be able to clear
++    // an earlier failure.
++    _ok = true;
++
+     _datagram = new sockets::UDPSocket();
+     if (_datagram == nullptr) {
+         spdlog::error("Error creating DDP datagram object for {}.", _ip);
+         _ok = false;
++        return;   // the Bind below would dereference null
+     }
+ 
+     if (!_datagram->Bind(GetForceLocalIP(), 0, false)) {
+-        spdlog::error("Error initialising DDP datagram for {}: {}", _ip, _datagram->LastError());
++        int suppressed = 0;
++        if (ShouldLogOpenFailure(suppressed)) {
++            spdlog::error("Error initialising DDP datagram for {}: {}{}", _ip, _datagram->LastError(), OpenFailureSuffix(suppressed));
++        }
+         delete _datagram;
+         _datagram = nullptr;
+         _ok = false;
+@@ -432,10 +440,11 @@ void DDPOutput::StartFrame(long msec) {
+     if (!_enabled) return;
+     if (_fppProxyOutput) {
+         _fppProxyOutput->StartFrame(msec);
+-    } else if (_datagram == nullptr && OutputManager::IsRetryOpen()) {
++    } else if (_datagram == nullptr && ShouldAttemptReopen(msec)) {
+         OpenDatagram();
+         if (_ok) {
+-            spdlog::debug("DDPOutput: Open retry successful");
++            ResetSendRecovery();
++            spdlog::debug("DDPOutput: reopened the socket to {}", _remoteIp);
+         }
+     }
+ 
+@@ -455,6 +464,10 @@ void DDPOutput::EndFrame(int suppressFrames) {
+         int32_t index = 0;
+         int32_t chan = _keepChannelNumbers ? (_startChannel - 1) : 0;
+         int32_t tosend = _channels;
++        // A DDP frame is several packets. The socket must not be closed part way
++        // through the loop: the remaining iterations would dereference a null
++        // _datagram. Collect the result and act once the frame is complete.
++        bool allSent = true;
+ 
+         while (tosend > 0) {
+             int32_t thissend = (tosend < _channelsPerPacket) ? tosend : _channelsPerPacket;
+@@ -484,7 +497,9 @@ void DDPOutput::EndFrame(int suppressFrames) {
+ 
+             memcpy(&_data[10], _fulldata + index, thissend);
+ 
+-            _datagram->SendTo(_remoteIp, DDP_PORT, &_data[0], DDP_PACKET_LEN - (1440 - thissend));
++            if (!_datagram->SendTo(_remoteIp, DDP_PORT, &_data[0], DDP_PACKET_LEN - (1440 - thissend))) {
++                allSent = false;
++            }
+             _sequenceNum = _sequenceNum == 15 ? 1 : _sequenceNum + 1;
+ 
+             tosend -= thissend;
+@@ -492,6 +507,16 @@ void DDPOutput::EndFrame(int suppressFrames) {
+             chan += thissend;
+         }
+         FrameOutput();
++        if (NoteSendResult(allSent)) {
++            spdlog::warn("DDP output to {}: {} frames failed to send in a row ({}). Closing the socket; it will be reopened automatically.",
++                         _remoteIp, SEND_FAILURES_BEFORE_CLOSE, _datagram->LastError());
++            // Release only the socket. Close() on these classes tears down more
++            // than that - DDPOutput::Close() also frees the channel buffer, which
++            // would silently discard every channel written until outputs were
++            // cycled - and recovery must leave the output otherwise intact.
++            delete _datagram;
++            _datagram = nullptr;
++        }
+     } else {
+         SkipFrame();
+     }
+diff --git a/src-core/outputs/E131Output.cpp b/src-core/outputs/E131Output.cpp
+index ca5d1f4a2..5cf105814 100644
+--- a/src-core/outputs/E131Output.cpp
++++ b/src-core/outputs/E131Output.cpp
+@@ -73,14 +73,23 @@ void E131Output::OpenDatagram() {
+ 
+     if (_datagram != nullptr) return;
+ 
++    // See ArtNetOutput::OpenDatagram: a successful open has to be able to clear
++    // an earlier failure.
++    _ok = true;
++
+     _datagram = new sockets::UDPSocket();
+     if (_datagram == nullptr) {
+         spdlog::error("E131Output: Error creating datagram object.");
++        _ok = false;
+     }
+     else if (!_datagram->Bind(GetForceLocalIPToUse(), 0, false)) {
+-        spdlog::error("E131Output: Error opening datagram. {}", _datagram->LastError());
++        int suppressed = 0;
++        if (ShouldLogOpenFailure(suppressed)) {
++            spdlog::error("E131Output: Error opening datagram to {}. {}{}", _remoteIp, _datagram->LastError(), OpenFailureSuffix(suppressed));
++        }
+         delete _datagram;
+         _datagram = nullptr;
++        _ok = false;
+     }
+ }
+ #pragma endregion
+@@ -388,10 +397,11 @@ void E131Output::StartFrame(long msec) {
+         return _fppProxyOutput->StartFrame(msec);
+     }
+ 
+-    if (_datagram == nullptr && OutputManager::IsRetryOpen()) {
++    if (_datagram == nullptr && ShouldAttemptReopen(msec)) {
+         OpenDatagram();
+         if (_ok) {
+-            spdlog::debug("E131Output: Open retry successful");
++            ResetSendRecovery();
++            spdlog::debug("E131Output: reopened the socket to {} universe {}", _remoteIp, GetUniverse());
+         }
+     }
+ 
+@@ -413,9 +423,19 @@ void E131Output::EndFrame(int suppressFrames) {
+ 
+     if (_changed || NeedToOutput(suppressFrames)) {
+         _data[111] = _sequenceNum;
+-        _datagram->SendTo(_remoteIp, E131_PORT, _data, E131_PACKET_LEN - (512 - _channels));
++        const bool sent = _datagram->SendTo(_remoteIp, E131_PORT, _data, E131_PACKET_LEN - (512 - _channels));
+         _sequenceNum = _sequenceNum == 255 ? 0 : _sequenceNum + 1;
+         FrameOutput();
++        if (NoteSendResult(sent)) {
++            spdlog::warn("E1.31 output to {} universe {}: {} sends failed in a row ({}). Closing the socket; it will be reopened automatically.",
++                         _remoteIp, GetUniverse(), SEND_FAILURES_BEFORE_CLOSE, _datagram->LastError());
++            // Release only the socket. Close() on these classes tears down more
++            // than that - DDPOutput::Close() also frees the channel buffer, which
++            // would silently discard every channel written until outputs were
++            // cycled - and recovery must leave the output otherwise intact.
++            delete _datagram;
++            _datagram = nullptr;
++        }
+     }
+     else {
+         SkipFrame();
+diff --git a/src-core/outputs/IPOutput.h b/src-core/outputs/IPOutput.h
+index a6124b808..a99a467f8 100644
+--- a/src-core/outputs/IPOutput.h
++++ b/src-core/outputs/IPOutput.h
+@@ -11,6 +11,7 @@
+  **************************************************************/
+ 
+ #include <map>
++#include <string>
+ 
+ #include "Output.h"
+ 
+@@ -52,4 +53,102 @@ public:
+     #pragma region Start and Stop
+     virtual bool Open() override { return Output::Open(); }
+     #pragma endregion 
++
++protected:
++    #pragma region Socket recovery
++    // A UDP socket bound to a local address that later goes away - a DHCP
++    // renewal, a sleep/wake, an interface change - fails every send from then
++    // on.  Nothing used to notice: the result of SendTo was discarded, and the
++    // reopen guard OutputManager::IsRetryOpen() has no caller anywhere in the
++    // tree, so _isRetryOpen is false for the life of the process and the retry
++    // in each StartFrame is unreachable.  Output stayed dead until the user
++    // toggled it off and on.  These three helpers give the IP outputs a way to
++    // notice and recover on their own.
++
++    // A single failure is usually transient (ENOBUFS on a heavy frame), so only
++    // a run of them is taken to mean the socket is gone.
++    static constexpr int SEND_FAILURES_BEFORE_CLOSE = 3;
++    // Reopening costs a socket() plus a bind() per universe.  On a large show
++    // that is thousands of syscalls a second while the network is down, so an
++    // attempt is allowed only once a second.
++    static constexpr long REOPEN_BACKOFF_MS = 1000;
++
++    int _consecutiveSendFailures = 0;
++    long _lastReopenAttemptMs = -1;
++
++    // Returns true when the caller should Close() its socket.
++    bool NoteSendResult(bool ok) {
++        if (ok) {
++            _consecutiveSendFailures = 0;
++            return false;
++        }
++        ++_consecutiveSendFailures;
++        return _consecutiveSendFailures >= SEND_FAILURES_BEFORE_CLOSE;
++    }
++
++    bool ShouldAttemptReopen(long msec) {
++        // The frame clock restarts at zero every time output is enabled, so a
++        // timestamp left over from a previous run must not hold the retry off.
++        if (_lastReopenAttemptMs >= 0 && msec < _lastReopenAttemptMs) {
++            _lastReopenAttemptMs = -1;
++        }
++        if (_lastReopenAttemptMs >= 0 && msec - _lastReopenAttemptMs < REOPEN_BACKOFF_MS) {
++            return false;
++        }
++        _lastReopenAttemptMs = msec;
++        return true;
++    }
++
++    // A reopened socket starts with a full allowance again.  Without this the
++    // old run of failures carries over and the first failed send after a
++    // recovery closes it immediately, which thrashes.
++    void ResetSendRecovery() {
++        _consecutiveSendFailures = 0;
++        _lastReopenAttemptMs = -1;
++        _suppressedOpenFailures = 0;
++        _lastOpenFailureLogMs = -1;
++    }
++
++    // A failed reopen is attempted once a second per universe. On a large show
++    // that is dozens of identical error lines every second for as long as the
++    // network is down, which buries everything else in the log. Log the first
++    // one immediately, then at most one every OPEN_FAILURE_LOG_INTERVAL_MS,
++    // carrying a count of what went unlogged in between.
++    static constexpr long OPEN_FAILURE_LOG_INTERVAL_MS = 30000;
++
++    int _suppressedOpenFailures = 0;
++    long _lastOpenFailureLogMs = -1;
++
++    // True when this open failure should be logged. `suppressed` receives how
++    // many were skipped since the last one that was.
++    bool ShouldLogOpenFailure(int& suppressed) {
++        suppressed = 0;
++        // Opens outside the retry path (startup, an explicit enable) always
++        // log: there is no storm to damp and the user needs to see them.
++        const long msec = _lastReopenAttemptMs;
++        if (msec < 0) {
++            _suppressedOpenFailures = 0;
++            _lastOpenFailureLogMs = -1;
++            return true;
++        }
++        if (_lastOpenFailureLogMs >= 0 && msec < _lastOpenFailureLogMs) {
++            _lastOpenFailureLogMs = -1;   // frame clock restarted
++        }
++        if (_lastOpenFailureLogMs >= 0 &&
++            msec - _lastOpenFailureLogMs < OPEN_FAILURE_LOG_INTERVAL_MS) {
++            ++_suppressedOpenFailures;
++            return false;
++        }
++        suppressed = _suppressedOpenFailures;
++        _suppressedOpenFailures = 0;
++        _lastOpenFailureLogMs = msec;
++        return true;
++    }
++
++    std::string OpenFailureSuffix(int suppressed) const {
++        return suppressed > 0
++            ? " (" + std::to_string(suppressed) + " further attempts not logged)"
++            : std::string();
++    }
++    #pragma endregion
+ };
+diff --git a/src-ui-wx/layout/LayoutPanel.cpp b/src-ui-wx/layout/LayoutPanel.cpp
+index ce20982b6..4a3fef09f 100644
+--- a/src-ui-wx/layout/LayoutPanel.cpp
++++ b/src-ui-wx/layout/LayoutPanel.cpp
+@@ -89,6 +89,9 @@
+ #include "model/ImportPreviewsModelsDialog.h"
+ #include "layout/ViewsModelsPanel.h"
+ #include "outputs/OutputManager.h"
++#include "models/Model.h"
++#include "models/DMX/DmxModel.h"
++#include <wx/timer.h>
+ #include "outputs/Output.h"
+ #include "outputs/Controller.h"
+ #include "controllers/ControllerCaps.h"
+@@ -1095,6 +1098,22 @@ LayoutPanel::LayoutPanel(wxWindow* parent, xLightsFrame *xl, wxPanel* sequencer)
+         layoutControlsBar->SetMinSize(wxSize(-1, 68));
+     }
+     PreviewGLPanel->GetSizer()->Add(layoutControlsBar, 0, wxEXPAND | wxALIGN_BOTTOM, 3);
++
++    // Highlight toggle, borrowed from lighting consoles. Sits in the top bar
++    // right after the model-type buttons. Latching: while it is down, whichever
++    // prop is selected is driven to full white on the real output.
++    ButtonHighlight = new wxToggleButton(PreviewGLPanel, wxID_ANY, _("Highlight"));
++    ButtonHighlight->SetToolTip("Light the selected prop white on the real output so you can find it. "
++                                "Everything else goes dark while this is on.");
++    ButtonHighlight->Bind(wxEVT_TOGGLEBUTTON, &LayoutPanel::OnHighlightToggled, this);
++    TopBarSizer->Insert(1, ButtonHighlight, 0, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 3);
++
++    // Swatch beside it: the colour Highlight drives the prop to. White by default.
++    ButtonHighlightColour = new wxButton(PreviewGLPanel, wxID_ANY, "", wxDefaultPosition, PreviewGLPanel->FromDIP(wxSize(30, -1)));
++    ButtonHighlightColour->SetBackgroundColour(_highlightColour);
++    ButtonHighlightColour->SetToolTip("Colour Highlight uses. Click to change.");
++    ButtonHighlightColour->Bind(wxEVT_BUTTON, &LayoutPanel::OnHighlightColourClicked, this);
++    TopBarSizer->Insert(2, ButtonHighlightColour, 0, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 3);
+     PreviewGLPanel->Layout();
+ 
+     UpdateDirectoriesFooter();
+@@ -1386,8 +1405,268 @@ void LayoutPanel::UpdateDirectoriesFooter()
+     LabelDirectoriesFooter->GetParent()->Layout();
+ }
+ 
++
++// ---------------------------------------------------------------------------
++// Highlight mode
++//
++// Borrowed from lighting consoles (ETC Eos "Highlight"): latch the button and
++// whichever prop you select is driven to full white on the real output, so you
++// can walk the site and see which one you are pointing at. Everything else is
++// held dark, which is the whole point - an unambiguous "that one".
++//
++// Why we take the wire: xLightsFrame::OutputTimer writes the entire channel
++// buffer every tick while a sequence tab is current, and re-sends the existing
++// buffer otherwise. If it keeps running underneath us it overwrites our frame
++// and the prop goes dark or flickers. So we take exclusive ownership for as
++// long as we are latched, the same way CustomModelBuilderDialog does, and we
++// hand it back on every exit path.
++// ---------------------------------------------------------------------------
++
++static constexpr int HIGHLIGHT_FRAME_MS = 50;             // 20fps, as PixelTestDialog
++
++bool LayoutPanel::HighlightEngage()
++{
++    if (_highlightActive) return true;
++    if (xlights == nullptr) return false;
++
++    // Never fight an actually-playing show: taking the wire mid-sequence would
++    // black out everything except the prop under the cursor.
++    // playType uses the PLAY_TYPE_* values, NOT the SeqPlayerStates enum - they
++    // only agree at 0. Paused counts as not playing on purpose, because pausing
++    // and walking out to the set is exactly when this button is wanted, and so
++    // does PLAY_TYPE_EFFECT, which merely means an effect is selected.
++    if (xlights->GetPlayStatus() == PLAY_TYPE_MODEL) {
++        wxMessageBox("Stop the sequence before turning Highlight on.",
++                     "Highlight", wxOK | wxICON_INFORMATION, this);
++        return false;
++    }
++
++    OutputManager* om = xlights->GetOutputManager();
++    if (om == nullptr) return false;
++
++    _highlightWasOutputting = om->IsOutputting();
++    if (_highlightWasOutputting) {
++        xlights->StopOutputTimer();               // outputs already open, take the timer
++    } else if (!xlights->ForceEnableOutputs(false, true)) {
++        // startTimer=false: we drive the frames ourselves.
++        // skipAutoUpload=true: clicking a highlight button must never push
++        // configuration to live controllers. If a controller needs its config,
++        // the user turns outputs on the normal way first.
++        return false;
++    }
++    om->SuspendAll(false);                        // a stale suspend means nothing transmits
++
++    if (_highlightTimer == nullptr) {
++        _highlightTimer = new wxTimer(this);
++        Bind(wxEVT_TIMER, &LayoutPanel::OnHighlightTimer, this, _highlightTimer->GetId());
++    }
++    _highlightActive = true;
++    _highlightSig = 0;
++    _highlightNeedsBlank = true;   // blank on the first frame even with nothing selected
++    _highlightTimer->Start(HIGHLIGHT_FRAME_MS, wxTIMER_CONTINUOUS);
++    xlights->SetStatusText("Highlight on - select a prop to light it white.");
++    return true;
++}
++
++void LayoutPanel::HighlightDisengage(bool restoreOutputs)
++{
++    if (!_highlightActive) return;
++    _highlightActive = false;
++
++    if (_highlightTimer != nullptr) _highlightTimer->Stop();
++
++    OutputManager* om = (xlights != nullptr) ? xlights->GetOutputManager() : nullptr;
++    if (om != nullptr) {
++        // Blackout what we lit, and make sure the zeros actually go out.
++        // Only while we still hold the wire: AllOff() does not check whether
++        // outputs are open, and LOROutput::AllOff sleeps 50ms per network.
++        if (om->IsOutputting()) {
++            om->StartFrame(0);
++            om->AllOff(false);
++            om->EndFrame();
++        }
++
++        if (restoreOutputs && xlights != nullptr) {
++            if (_highlightWasOutputting) {
++                xlights->StartOutputTimer();      // hand the wire back
++            } else {
++                xlights->DisableOutputs();        // we opened it, we close it
++            }
++        }
++    }
++    // If we did not restore, we no longer know who owns the outputs, so forget
++    // that we ever opened them; a later cycle must not act on stale ownership.
++    if (!restoreOutputs) _highlightWasOutputting = false;
++    _highlightSig = 0;
++    _highlightNeedsBlank = false;
++    if (ButtonHighlight != nullptr && ButtonHighlight->GetValue()) {
++        ButtonHighlight->SetValue(false);
++    }
++    if (xlights != nullptr) xlights->SetStatusText("");
++}
++
++void LayoutPanel::HighlightSendFrame()
++{
++    if (xlights == nullptr) return;
++    OutputManager* om = xlights->GetOutputManager();
++    if (om == nullptr) return;
++
++    BaseObject* sel = IsSelectedBaseObjectValid() ? selectedBaseObject : nullptr;
++    Model* m = dynamic_cast<Model*>(sel);
++
++    // Decide whether this prop can be lit at all, and say why when it cannot.
++    std::string status;
++    if (m != nullptr) {
++        // Groups and submodels never carry a controller port and their
++        // CouldComputeStartChannel is left false by RecalcStartChannels, so the
++        // port-based and start-channel checks below must not be applied to them.
++        // The rest of this file exempts them the same way.
++        const bool isGroup = (m->GetDisplayAs() == DisplayAsType::ModelGroup);
++        const bool isSub = (m->GetDisplayAs() == DisplayAsType::SubModel);
++
++        if (dynamic_cast<DmxModel*>(m) != nullptr || (!isGroup && !isSub && m->IsSerialProtocol())) {
++            // A DMX fixture's "nodes" are its raw DMX channels. Writing 255 to
++            // all of them slams a moving head to its stops, fires relays and
++            // drives servos to end of travel. Never do that to find a prop.
++            // Tested by class, not by IsPixelProtocol(): that asks whether a
++            // controller PORT is set, so it also refuses every prop addressed by
++            // absolute channel, #universe:ch or a chain, plus all groups.
++            status = "Highlight: " + m->GetName() + " is a DMX fixture, skipping it.";
++            m = nullptr;
++        } else if (!isGroup && !isSub && (!m->CouldComputeStartChannel || !m->IsValidStartChannelString())) {
++            // An unresolved start channel leaves every node at absolute 0, which
++            // would light the head of the first controller - someone else's prop,
++            // and exactly the prop you were trying to identify.
++            status = "Highlight: " + m->GetName() + " has an unresolved start channel, skipping it.";
++            m = nullptr;
++        } else if (m->GetNodeCount() == 0) {
++            status = "Highlight: " + m->GetName() + " has no nodes.";
++            m = nullptr;
++        } else {
++            status = "Highlight: " + m->GetName();
++        }
++    } else if (sel != nullptr) {
++        status = "Highlight: that selection is not a prop.";
++    } else {
++        status = "Highlight on - select a prop to light it white.";
++    }
++
++    // Blank the wire only when what we are lighting actually changed. AllOff()
++    // is not a cheap memset on every output type: LOROutput::AllOff writes every
++    // channel to a serial port and then sleeps 50ms, so calling it every frame
++    // would wedge the UI on any show with an LOR network.
++    //
++    // The key is the channel range, not the object pointer. Editing the selected
++    // prop's start channel or node count rewrites its channels IN PLACE without
++    // replacing the object, and a pointer key would leave the prop's old
++    // channels white while the new ones lit too - two props on for one click,
++    // during the exact workflow this button exists for.
++    uint64_t sig = 0;
++    if (m != nullptr) {
++        const uint32_t sigNodes = m->GetNodeCount();
++        sig = static_cast<uint64_t>(reinterpret_cast<uintptr_t>(m));
++        sig = sig * 1000003ull + sigNodes;
++        sig = sig * 1000003ull + static_cast<uint64_t>(static_cast<uint32_t>(m->NodeStartChannel(0)));
++        sig = sig * 1000003ull + static_cast<uint64_t>(static_cast<uint32_t>(m->NodeEndChannel(sigNodes - 1)));
++    }
++    const bool changed = _highlightNeedsBlank || (sig != _highlightSig);
++
++    om->StartFrame(0);
++    if (changed) om->AllOff(false);
++    if (m != nullptr) {
++        const xlColor hl = wxColourToXlColor(_highlightColour);
++        unsigned char nodeBuf[16];
++        const uint32_t nodes = m->GetNodeCount();
++        for (uint32_t n = 0; n < nodes; ++n) {
++            // Per node, and using this node's own end channel. A model group's
++            // nodes are its members' nodes, and their channel widths differ; one
++            // shared width walks off the end of the prop onto its neighbour.
++            // Walking nodes rather than first..last also matters, because
++            // multi-string and custom models have gaps that belong to other props.
++            const int32_t first = m->NodeStartChannel(n);
++            const int32_t last = m->NodeEndChannel(n);
++            const int32_t width = last - first + 1;
++            NodeBaseClass* node = m->GetNode(n);
++            if (node == nullptr || width <= 0 || width > (int32_t)sizeof(nodeBuf)) continue;
++
++            // Let the node lay the colour out. It knows its own channel order and
++            // type, so RGB, GRB, RGBW and single-colour props all come out right
++            // without this code knowing anything about colour order.
++            // GetForChannels only writes the offsets it uses, so the buffer has to
++            // be cleared first or stale bytes go on the wire.
++            for (size_t z = 0; z < sizeof(nodeBuf); ++z) nodeBuf[z] = 0;
++            node->SetColor(hl);
++            node->GetForChannels(nodeBuf);
++            for (int32_t k = 0; k < width; ++k) {
++                om->SetOneChannel(first + k, nodeBuf[k]);
++            }
++        }
++    }
++    om->EndFrame();
++
++    if (changed) {
++        _highlightSig = sig;
++        _highlightNeedsBlank = false;
++        xlights->SetStatusText(status);
++    }
++}
++
++void LayoutPanel::OnHighlightTimer(wxTimerEvent& event)
++{
++    if (!_highlightActive) return;
++
++    // If the user left the Layout tab we must not keep holding the wire - the
++    // sequencer would have no output timer and the show would sit dark.
++    if (!IsShownOnScreen()) {
++        HighlightDisengage(true);
++        return;
++    }
++
++    // Something else can take the wire out from under us: Tools > Test, the
++    // Output To Lights toolbar toggle, a show folder change, the submodel and
++    // faces dialogs. Staying latched would leave the button down and the status
++    // line lying while nothing reaches the hardware.
++    OutputManager* om = (xlights != nullptr) ? xlights->GetOutputManager() : nullptr;
++    if (om != nullptr && !om->IsOutputting()) {
++        HighlightDisengage(false);   // we no longer own it, so restore nothing
++        xlights->SetStatusText("Highlight turned off - something else took over the lighting output.");
++        return;
++    }
++    HighlightSendFrame();
++}
++
++void LayoutPanel::OnHighlightColourClicked(wxCommandEvent& event)
++{
++    auto const& [res, colour] = xlColourData::INSTANCE.ShowColorDialog(this, _highlightColour);
++    if (res == wxID_OK) {
++        _highlightColour = colour;
++        if (ButtonHighlightColour != nullptr) {
++            ButtonHighlightColour->SetBackgroundColour(_highlightColour);
++            ButtonHighlightColour->Refresh();
++        }
++        // The selection did not change, so force the next frame to repaint the
++        // prop rather than waiting for the user to click something else.
++        _highlightNeedsBlank = true;
++    }
++}
++
++void LayoutPanel::OnHighlightToggled(wxCommandEvent& event)
++{
++    if (ButtonHighlight != nullptr && ButtonHighlight->GetValue()) {
++        if (!HighlightEngage()) ButtonHighlight->SetValue(false);
++    } else {
++        HighlightDisengage(true);
++    }
++}
++
+ LayoutPanel::~LayoutPanel()
+ {
++    HighlightDisengage(true);
++    if (_highlightTimer != nullptr) {
++        _highlightTimer->Stop();
++        delete _highlightTimer;
++        _highlightTimer = nullptr;
++    }
+     if (layout_mgr != nullptr) {
+         layout_mgr->UnInit();
+         delete layout_mgr;
+diff --git a/src-ui-wx/layout/LayoutPanel.h b/src-ui-wx/layout/LayoutPanel.h
+index 121ca52d5..fed28d216 100644
+--- a/src-ui-wx/layout/LayoutPanel.h
++++ b/src-ui-wx/layout/LayoutPanel.h
+@@ -65,6 +65,9 @@ class ViewObject;
+ class wxListEvent;
+ class wxMouseEvent;
+ class wxBitmapButton;
++class wxToggleButton;
++class wxTimer;
++class wxTimerEvent;
+ class wxPropertyGrid;
+ class wxPropertyGridEvent;
+ class NewModelBitmapButton;
+@@ -608,6 +611,23 @@ class LayoutPanel: public wxPanel
+         std::unique_ptr<ModelPropertyAdapter> _propertyAdapter;
+         std::unique_ptr<ViewObjectPropertyAdapter> _viewObjectAdapter;
+         BaseObject *highlightedBaseObject = nullptr;
++
++        // --- Highlight mode (see LayoutPanel.cpp) -------------------------
++        wxToggleButton* ButtonHighlight = nullptr;
++        wxTimer* _highlightTimer = nullptr;
++        bool _highlightActive = false;
++        bool _highlightWasOutputting = false;
++        uint64_t _highlightSig = 0;                // identity of what is lit, not just the pointer
++        bool _highlightNeedsBlank = false;
++        wxButton* ButtonHighlightColour = nullptr;
++        wxColour _highlightColour = *wxWHITE;
++        void OnHighlightColourClicked(wxCommandEvent& event);
++        void OnHighlightToggled(wxCommandEvent& event);
++        void OnHighlightTimer(wxTimerEvent& event);
++        bool HighlightEngage();
++        void HighlightDisengage(bool restoreOutputs);
++        void HighlightSendFrame();
++        // -------------------------------------------------------------------
+         wxTreeListItem selectedPrimaryTreeItem = nullptr;
+         bool selectionLatched = false;
+         // Previous hover state, used to detect transitions so
+-- 
+2.34.1
+
