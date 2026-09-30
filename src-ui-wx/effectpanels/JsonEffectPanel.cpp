@@ -11,10 +11,15 @@
 #include "JsonEffectPanel.h"
 
 #include <algorithm>
+#include <chrono>
+#include <climits>
+#include <memory>
 
 #include <wx/sizer.h>
 #include <wx/button.h>
 #include <wx/panel.h>
+#include <wx/menu.h>
+#include <wx/msgdlg.h>
 #include <wx/stattext.h>
 #include <wx/slider.h>
 #include <wx/textctrl.h>
@@ -40,6 +45,10 @@
 #include "models/ModelGroup.h"
 #include "models/SubModel.h"
 #include "render/SequenceElements.h"
+#include "render/Effect.h"
+#include "render/EffectLayer.h"
+#include "render/Element.h"
+#include "sequencer/MainSequencer.h"
 #include "xLightsApp.h"
 #include "xLightsMain.h"
 
@@ -1051,29 +1060,119 @@ void JsonEffectPanel::BuildPropertyRow(wxWindow* parentWin, wxSizer* sizer, cons
                     (wxObjectEventFunction)&JsonEffectPanel::OnVCButtonClick);
         }
 
-        // Optional row of buttons under a float slider that multiply its value
-        // (e.g. 1/4, 1/2, 2x on a BPM). Only for text-primary float sliders, since
-        // they write through the text control exactly as typing would.
-        if (prop.contains("multiplierButtons") && divisor > 1 && settingPrefix != "SLIDER") {
+        // Optional helper row under a float slider (used by the tempo BPM controls):
+        //   multiplierButtons - e.g. [0.25, 0.5, 2]: multiply the current value
+        //   tapTempo          - Tap along with the music to set a BPM
+        //   bpmFromTrack      - set a BPM from mark spacing on a timing track
+        // Only for text-primary float sliders: every button writes through the text
+        // control, so the effect updates exactly as if the value had been typed.
+        const bool wantMult = prop.contains("multiplierButtons");
+        const bool wantTap = prop.value("tapTempo", false);
+        const bool wantFromTrack = prop.value("bpmFromTrack", false);
+        if ((wantMult || wantTap || wantFromTrack) && divisor > 1 && settingPrefix != "SLIDER") {
             if (!hasValueCurve) sliderSizer->AddSpacer(0);
             auto* row = new wxPanel(parentWin, wxID_ANY);
             auto* rowSizer = new wxBoxSizer(wxHORIZONTAL);
             const double lo = minVal / (double)divisor;
             const double hi = maxVal / (double)divisor;
-            for (const auto& m : prop["multiplierButtons"]) {
-                const double factor = m.get<double>();
-                wxString btnLabel = factor == 0.25 ? wxString("1/4") : factor == 0.5 ? wxString("1/2") : wxString::Format("%gx", factor);
-                auto* btn = new wxButton(row, wxID_ANY, btnLabel, wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
-                btn->Bind(wxEVT_BUTTON, [this, id, factor, lo, hi, divisor](wxCommandEvent&) {
-                    auto pit = properties_.find(id);
-                    if (pit == properties_.end() || pit->second.textCtrl == nullptr) return;
-                    double v = 0;
-                    if (!pit->second.textCtrl->GetValue().ToCDouble(&v)) return;
-                    v = std::clamp(v * factor, lo, hi);
-                    pit->second.textCtrl->SetValue(wxString::Format(divisor >= 100 ? "%.2f" : "%.1f", v));
-                });
+            auto setValue = [this, id, lo, hi, divisor](double v) {
+                auto pit = properties_.find(id);
+                if (pit == properties_.end() || pit->second.textCtrl == nullptr) return;
+                v = std::clamp(v, lo, hi);
+                pit->second.textCtrl->SetValue(wxString::Format(divisor >= 100 ? "%.2f" : "%.1f", v));
+            };
+            auto addButton = [row, rowSizer](const wxString& text, const wxString& tip) {
+                auto* btn = new wxButton(row, wxID_ANY, text, wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+                if (!tip.empty()) btn->SetToolTip(tip);
                 rowSizer->Add(btn, 0, wxRIGHT, 2);
+                return btn;
+            };
+
+            if (wantMult) {
+                for (const auto& m : prop["multiplierButtons"]) {
+                    const double factor = m.get<double>();
+                    wxString btnLabel = factor == 0.25 ? wxString("1/4") : factor == 0.5 ? wxString("1/2") : wxString::Format("%gx", factor);
+                    addButton(btnLabel, "")->Bind(wxEVT_BUTTON, [this, id, factor, setValue](wxCommandEvent&) {
+                        auto pit = properties_.find(id);
+                        double v = 0;
+                        if (pit == properties_.end() || pit->second.textCtrl == nullptr ||
+                            !pit->second.textCtrl->GetValue().ToCDouble(&v)) return;
+                        setValue(v * factor);
+                    });
+                }
             }
+
+            if (wantTap) {
+                // Average of up to the last 8 intervals; a pause of 2s starts a new count.
+                auto taps = std::make_shared<std::vector<std::chrono::steady_clock::time_point>>();
+                addButton("Tap", "Click along with the beat while the song plays. Pause 2 seconds to start over.")
+                    ->Bind(wxEVT_BUTTON, [taps, setValue](wxCommandEvent&) {
+                        const auto now = std::chrono::steady_clock::now();
+                        if (!taps->empty() && now - taps->back() > std::chrono::seconds(2)) taps->clear();
+                        taps->push_back(now);
+                        if (taps->size() > 9) taps->erase(taps->begin());
+                        if (taps->size() < 2) return;
+                        const double ms = std::chrono::duration<double, std::milli>(taps->back() - taps->front()).count() / (taps->size() - 1);
+                        if (ms > 0) setValue(60000.0 / ms);
+                    });
+            }
+
+            if (wantFromTrack) {
+                wxButton* fromBtn = addButton("From track", "Set the BPM from the spacing of marks on a timing track, within the selected effect's time span.");
+                fromBtn->Bind(wxEVT_BUTTON, [this, fromBtn, setValue](wxCommandEvent&) {
+                    std::vector<std::string> names;
+                    if (mSequenceElements != nullptr) {
+                        for (size_t i = 0; i < mSequenceElements->GetElementCount(); i++) {
+                            Element* e = mSequenceElements->GetElement(i);
+                            if (e->GetType() == ElementType::ELEMENT_TYPE_TIMING && e->GetEffectLayerCount() <= 1) {
+                                names.push_back(e->GetName());
+                            }
+                        }
+                    }
+                    if (names.empty()) {
+                        wxMessageBox("This sequence has no timing tracks. Add one first, for example a beat track generated from the audio.", "From track", wxOK | wxICON_INFORMATION, this);
+                        return;
+                    }
+                    wxMenu menu;
+                    for (size_t i = 0; i < names.size(); i++) menu.Append(wxID_HIGHEST + 1 + (int)i, wxString(names[i]));
+                    const int sel = fromBtn->GetPopupMenuSelectionFromUser(menu);
+                    if (sel == wxID_NONE || sel <= wxID_HIGHEST || sel > wxID_HIGHEST + (int)names.size()) return;
+                    const std::string& name = names[sel - wxID_HIGHEST - 1];
+
+                    int rangeStart = 0, rangeEnd = INT_MAX;
+                    xLightsFrame* frame = xLightsApp::GetFrame();
+                    Effect* selected = (frame != nullptr && frame->GetMainSequencer() != nullptr) ? frame->GetMainSequencer()->GetSelectedEffect() : nullptr;
+                    if (selected != nullptr) {
+                        rangeStart = selected->GetStartTimeMS();
+                        rangeEnd = selected->GetEndTimeMS();
+                    }
+
+                    std::vector<int> starts;
+                    TimingElement* t = mSequenceElements->GetTimingElement(name);
+                    EffectLayer* el = t != nullptr ? t->GetEffectLayer(0) : nullptr;
+                    if (el != nullptr) {
+                        for (int j = 0; j < el->GetEffectCount(); j++) {
+                            const int st = el->GetEffect(j)->GetStartTimeMS();
+                            if (st >= rangeStart && st < rangeEnd) starts.push_back(st);
+                        }
+                    }
+                    // Refuse rather than guess: two marks give one interval, which is too easily a stray.
+                    if (starts.size() < 3) {
+                        wxMessageBox(wxString::Format("Only %d mark(s) on \"%s\" fall inside this effect; at least 3 are needed to measure a tempo.",
+                                                      (int)starts.size(), wxString(name)),
+                                     "From track", wxOK | wxICON_INFORMATION, this);
+                        return;
+                    }
+                    std::sort(starts.begin(), starts.end());
+                    std::vector<int> gaps;
+                    for (size_t j = 1; j < starts.size(); j++) gaps.push_back(starts[j] - starts[j - 1]);
+                    // Median, so one missed or doubled beat doesn't skew the result.
+                    std::nth_element(gaps.begin(), gaps.begin() + gaps.size() / 2, gaps.end());
+                    const int median = gaps[gaps.size() / 2];
+                    if (median > 0) setValue(60000.0 / median);
+                });
+            }
+
             row->SetSizer(rowSizer);
             sliderSizer->Add(row, 0, wxLEFT | wxBOTTOM, 2);
             sliderSizer->AddSpacer(0);
