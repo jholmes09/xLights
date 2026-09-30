@@ -25,6 +25,9 @@
 #include "ispc/BarsFunctions.ispc.h"
 #include "Parallel.h"
 
+#include <spdlog/fmt/fmt.h>
+#include <log.h>
+
 BarsEffect::BarsEffect(int i) :
     RenderableEffect(i, "Bars", bars_16, bars_24, bars_32, bars_48, bars_64)
 {
@@ -149,7 +152,18 @@ double BarsEffect::GetEffectiveCycles(RenderBuffer& buffer, const SettingsMap& S
 
     double speed = GetValueCurveDouble("Bars_Speed", sSpeedDefault, SettingsMap, offset, sSpeedMin, sSpeedMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sSpeedDivisor);
     double durationSec = (buffer.GetEndTimeMS() - buffer.GetStartTimeMS()) / 1000.0;
-    return speed * durationSec;
+    double result = speed * durationSec;
+
+    // TEMPORARY diagnostic — remove once the duration-dependence report is
+    // resolved. Fires once per effect instance (first frame only) so it
+    // doesn't flood the log during playback.
+    if (buffer.curPeriod == buffer.curEffStartPer) {
+        spdlog::info("BARS_SPEED_DEBUG startMS={} endMS={} durationSec={} speed={} cycles={} curEffStartPer={} curEffEndPer={} frameTimeInMs={}",
+                     buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), durationSec, speed, result,
+                     buffer.curEffStartPer, buffer.curEffEndPer, buffer.frameTimeInMs);
+    }
+
+    return result;
 }
 
 void BarsEffect::Render(Effect* effect, const SettingsMap& SettingsMap, RenderBuffer& buffer)
