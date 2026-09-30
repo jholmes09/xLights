@@ -10,7 +10,11 @@
 
 #include "JsonEffectPanel.h"
 
+#include <algorithm>
+
 #include <wx/sizer.h>
+#include <wx/button.h>
+#include <wx/panel.h>
 #include <wx/stattext.h>
 #include <wx/slider.h>
 #include <wx/textctrl.h>
@@ -1047,6 +1051,35 @@ void JsonEffectPanel::BuildPropertyRow(wxWindow* parentWin, wxSizer* sizer, cons
                     (wxObjectEventFunction)&JsonEffectPanel::OnVCButtonClick);
         }
 
+        // Optional row of buttons under a float slider that multiply its value
+        // (e.g. 1/4, 1/2, 2x on a BPM). Only for text-primary float sliders, since
+        // they write through the text control exactly as typing would.
+        if (prop.contains("multiplierButtons") && divisor > 1 && settingPrefix != "SLIDER") {
+            if (!hasValueCurve) sliderSizer->AddSpacer(0);
+            auto* row = new wxPanel(parentWin, wxID_ANY);
+            auto* rowSizer = new wxBoxSizer(wxHORIZONTAL);
+            const double lo = minVal / (double)divisor;
+            const double hi = maxVal / (double)divisor;
+            for (const auto& m : prop["multiplierButtons"]) {
+                const double factor = m.get<double>();
+                wxString btnLabel = factor == 0.25 ? wxString("1/4") : factor == 0.5 ? wxString("1/2") : wxString::Format("%gx", factor);
+                auto* btn = new wxButton(row, wxID_ANY, btnLabel, wxDefaultPosition, wxDefaultSize, wxBU_EXACTFIT);
+                btn->Bind(wxEVT_BUTTON, [this, id, factor, lo, hi, divisor](wxCommandEvent&) {
+                    auto pit = properties_.find(id);
+                    if (pit == properties_.end() || pit->second.textCtrl == nullptr) return;
+                    double v = 0;
+                    if (!pit->second.textCtrl->GetValue().ToCDouble(&v)) return;
+                    v = std::clamp(v * factor, lo, hi);
+                    pit->second.textCtrl->SetValue(wxString::Format(divisor >= 100 ? "%.2f" : "%.1f", v));
+                });
+                rowSizer->Add(btn, 0, wxRIGHT, 2);
+            }
+            row->SetSizer(rowSizer);
+            sliderSizer->Add(row, 0, wxLEFT | wxBOTTOM, 2);
+            sliderSizer->AddSpacer(0);
+            info.extraRow = row;
+        }
+
         sizer->Add(sliderSizer, 1, wxALL | wxEXPAND, 0);
 
         // Column 3: Text buddy control
@@ -1812,6 +1845,7 @@ void JsonEffectPanel::ApplyVisibilityRules() {
                     if (it2->second.comboBox && ctrl != it2->second.comboBox)
                         it2->second.comboBox->Enable(enabled);
                     if (it2->second.valueCurveBtn) it2->second.valueCurveBtn->Enable(enabled);
+                    if (it2->second.extraRow) it2->second.extraRow->Enable(enabled);
                 }
             }
         };
@@ -1833,6 +1867,7 @@ void JsonEffectPanel::ApplyVisibilityRules() {
                 if (it2->second.comboBox && ctrl != it2->second.comboBox)
                     it2->second.comboBox->Show(visible);
                 if (it2->second.valueCurveBtn) it2->second.valueCurveBtn->Show(visible);
+                if (it2->second.extraRow) it2->second.extraRow->Show(visible);
 
                 // Hide the sibling label so the row doesn't leave an orphan cell.
                 wxWindow* label = wxWindow::FindWindowByName(wxString::Format("ID_STATICTEXT_%s", id), this);
