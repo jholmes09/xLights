@@ -100,6 +100,44 @@
             "description": "Number of full revolutions the spiral arm wraps around the center. More revolutions create a tighter spiral. settingPrefix:SLIDER because GalaxyEffect::Render calls GetValueCurveInt which reads SLIDER_<id> as a raw pre-divisor int and divides inside ValueCurve."
         },
         {
+            "id": "Galaxy_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM",
+                "Timing Track"
+            ],
+            "default": "Cycles",
+            "lockable": true,
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length. Timing Track runs one cycle per mark on the chosen timing track."
+        },
+        {
+            "id": "Galaxy_BPM",
+            "label": "BPM",
+            "type": "float",
+            "controlType": "slider",
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
+            "lockable": true,
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
+            "id": "Galaxy_TempoTrack",
+            "label": "Timing Track",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [],
+            "default": "",
+            "dynamicOptions": "timingTracks",
+            "expandToFill": true,
+            "lockable": true,
+            "description": "Timing track to follow when Timing is Timing Track. One cycle per mark; the effect holds still before the first mark, in gaps, and after the last mark."
+        },
+        {
             "id": "Galaxy_Duration",
             "label": "Head Duration",
             "type": "int",
@@ -175,7 +213,10 @@
                     "properties": [
                         "Galaxy_End_Radius",
                         "Galaxy_End_Width",
-                        "Galaxy_Revolutions"
+                        "Galaxy_Revolutions",
+                        "Galaxy_TempoMode",
+                        "Galaxy_BPM",
+                        "Galaxy_TempoTrack"
                     ]
                 },
                 {
@@ -191,6 +232,26 @@
                 }
             ],
             "settingKey": "E_NOTEBOOK_Galaxy"
+        }
+    ],
+    "visibilityRules": [
+        {
+            "when": {
+                "property": "Galaxy_TempoMode",
+                "equals": "BPM"
+            },
+            "show": [
+                "Galaxy_BPM"
+            ]
+        },
+        {
+            "when": {
+                "property": "Galaxy_TempoMode",
+                "equals": "Timing Track"
+            },
+            "show": [
+                "Galaxy_TempoTrack"
+            ]
         }
     ]
 }

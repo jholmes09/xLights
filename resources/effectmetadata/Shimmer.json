@@ -27,6 +27,44 @@
             "description": "Number of on/off shimmer cycles over the duration of the effect. Higher values produce faster flickering."
         },
         {
+            "id": "Shimmer_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM",
+                "Timing Track"
+            ],
+            "default": "Cycles",
+            "lockable": true,
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length. Timing Track runs one cycle per mark on the chosen timing track."
+        },
+        {
+            "id": "Shimmer_BPM",
+            "label": "BPM",
+            "type": "float",
+            "controlType": "slider",
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
+            "lockable": true,
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
+            "id": "Shimmer_TempoTrack",
+            "label": "Timing Track",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [],
+            "default": "",
+            "dynamicOptions": "timingTracks",
+            "expandToFill": true,
+            "lockable": true,
+            "description": "Timing track to follow when Timing is Timing Track. One cycle per mark; the effect holds still before the first mark, in gaps, and after the last mark."
+        },
+        {
             "id": "Shimmer_Use_All_Colors",
             "label": "Use All Colors",
             "type": "bool",
@@ -43,6 +81,35 @@
             "controlType": "checkbox",
             "default": false,
             "description": "Uses the legacy shimmer rendering algorithm from before version 2017.7 for backward compatibility with older sequences."
+        }
+    ],
+    "visibilityRules": [
+        {
+            "when": {
+                "property": "Shimmer_TempoMode",
+                "equals": "BPM"
+            },
+            "show": [
+                "Shimmer_BPM"
+            ]
+        },
+        {
+            "when": {
+                "property": "Shimmer_TempoMode",
+                "equals": "Timing Track"
+            },
+            "show": [
+                "Shimmer_TempoTrack"
+            ]
+        },
+        {
+            "when": {
+                "property": "Shimmer_TempoMode",
+                "equals": "Cycles"
+            },
+            "show": [
+                "Shimmer_Cycles"
+            ]
         }
     ]
 }

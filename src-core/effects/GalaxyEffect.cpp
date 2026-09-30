@@ -15,6 +15,7 @@
 #include "UtilClasses.h"
 #include "UtilFunctions.h"
 #include "Parallel.h"
+#include "EffectTempo.h"
 #include "ispc/GalaxyFunctions.ispc.h"
 
 #include "../../include/galaxy-16.xpm"
@@ -237,6 +238,20 @@ inline bool GalaxyVisibleRRange(double sinA, double cosA, double pos_x, double p
 }
 }
 
+double GalaxyEffect::GetGalaxyPosition(RenderBuffer& buffer, const SettingsMap& settings, double eff_pos, int acceleration)
+{
+    EffectTempo::Tempo tempo = EffectTempo::Get(settings, "Galaxy", buffer, GetSequenceElements(buffer));
+    if (tempo.active) {
+        return tempo.Position();
+    }
+    return buffer.calcAccel(eff_pos, acceleration);
+}
+
+void GalaxyEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "Galaxy", oldname, newname);
+}
+
 void GalaxyEffect::Render(Effect* effect, const SettingsMap& SettingsMap, RenderBuffer& buffer)
 {
     double eff_pos = buffer.GetEffectTimeIntervalPosition();
@@ -259,7 +274,7 @@ void GalaxyEffect::Render(Effect* effect, const SettingsMap& SettingsMap, Render
         return;
 
     int num_colors = buffer.palette.Size();
-    double eff_pos_adj = buffer.calcAccel(eff_pos, acceleration);
+    double eff_pos_adj = GetGalaxyPosition(buffer, SettingsMap, eff_pos, acceleration);
     double revs = (double)revolutions;
 
     double pos_x = buffer.BufferWi * center_x / 100.0;

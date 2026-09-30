@@ -19,6 +19,7 @@
 
 #include "ispc/FanFunctions.ispc.h"
 #include "Parallel.h"
+#include "EffectTempo.h"
 
 
 #include "../../include/fan-16.xpm"
@@ -181,6 +182,20 @@ void FanEffect::adjustSettings(const std::string& version, Effect* effect, bool 
     }
 }
 
+double FanEffect::GetFanAngleOffset(RenderBuffer& buffer, const SettingsMap& settings, double eff_pos_adj, double revs)
+{
+    EffectTempo::Tempo tempo = EffectTempo::Get(settings, "Fan", buffer, GetSequenceElements(buffer));
+    if (tempo.active) {
+        return tempo.phase * 360.0;
+    }
+    return eff_pos_adj * revs;
+}
+
+void FanEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "Fan", oldname, newname);
+}
+
 void FanEffect::Render(Effect *effect, const SettingsMap &SettingsMap, RenderBuffer &buffer) {
     double eff_pos = buffer.GetEffectTimeIntervalPosition();
     int center_x = GetValueCurveInt("Fan_CenterX", sCenterXDefault, SettingsMap, eff_pos, sCenterXMin, sCenterXMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
@@ -234,7 +249,7 @@ void FanEffect::Render(Effect *effect, const SettingsMap &SettingsMap, RenderBuf
     double blade_div_angle = 360.0 / (double)num_blades;
     double blade_width_angle = blade_div_angle * (double)blade_width / 100.0;
     double color_angle = blade_width_angle / (double)num_colors;
-    double angle_offset = eff_pos_adj * revs;
+    double angle_offset = GetFanAngleOffset(buffer, SettingsMap, eff_pos_adj, revs);
     double element_angle = color_angle / (double)num_elements;
     double element_size = element_angle * (double)element_width/ 100.0;
 

@@ -21,6 +21,7 @@ public:
     virtual bool needToAdjustSettings(const std::string& version) override;
     virtual void adjustSettings(const std::string& version, Effect* effect, bool removeDefaults = true) override;
     virtual void Render(Effect* effect, const SettingsMap& settings, RenderBuffer& buffer) override;
+    virtual void RenameTimingTrack(std::string oldname, std::string newname, Effect* effect) override;
     virtual FrameParallelism GetFrameParallelism(const SettingsMap& settings) const override { return FrameParallelism::Pure; }
     virtual int DrawEffectBackground(const Effect* e, int x1, int y1, int x2, int y2,
                                      xlVertexColorAccumulator& backgrounds, xlColor* colorMask, bool ramps) override;
@@ -76,4 +77,8 @@ public:
 
 protected:
     virtual void OnMetadataLoaded() override;
+    // 0..1 progress of the head along the spiral. Cycles mode is the original
+    // accelerated effect position; BPM / timing-track modes make one full pass
+    // of the spiral per beat / mark, ignoring Accel (EffectTempo.h).
+    double GetGalaxyPosition(RenderBuffer& buffer, const SettingsMap& settings, double eff_pos, int acceleration);
 };

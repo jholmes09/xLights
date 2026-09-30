@@ -16,6 +16,7 @@
 #include "UtilClasses.h"
 #include "UtilFunctions.h"
 #include "Parallel.h"
+#include "EffectTempo.h"
 #include <log.h>
 
 static const std::string TEXTCTRL_Eff_On_Start("TEXTCTRL_Eff_On_Start");
@@ -131,6 +132,11 @@ int OnEffect::DrawEffectBackground(const Effect *e, int x1, int y1, int x2, int 
     }
 }
 
+void OnEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "On", oldname, newname);
+}
+
 void OnEffect::Render(Effect *eff, const SettingsMap &SettingsMap, RenderBuffer &buffer) {
     // Defaults were cached from On.json in OnMetadataLoaded() — Render must
     // never touch the JSON.
@@ -152,7 +158,8 @@ void OnEffect::Render(Effect *eff, const SettingsMap &SettingsMap, RenderBuffer 
 
     bool spatialcolour = buffer.palette.IsSpatial(cidx);
     bool gradientcolour = buffer.palette.IsGradient(cidx);
-    double adjust = buffer.GetEffectTimeIntervalPosition(cycles);
+    EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "On", buffer, GetSequenceElements(buffer));
+    double adjust = tempo.active ? tempo.Position() : buffer.GetEffectTimeIntervalPosition(cycles);
 
     xlColor color;
     if (start == 100 && end == 100) {
@@ -217,7 +224,7 @@ void OnEffect::Render(Effect *eff, const SettingsMap &SettingsMap, RenderBuffer 
         buffer.Fill(color);
     }
 
-    if (shimmer || cycles != 1.0 || gradientcolour || spatialcolour) {
+    if (shimmer || tempo.active || cycles != 1.0 || gradientcolour || spatialcolour) {
         if (eff->IsBackgroundDisplayListEnabled() && buffer.perModelIndex == 0) {
             std::lock_guard<std::recursive_mutex> lock(eff->GetBackgroundDisplayList().lock);
             eff->GetBackgroundDisplayList().resize((buffer.curEffEndPer - buffer.curEffStartPer + 1) * 6);

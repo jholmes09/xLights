@@ -107,13 +107,12 @@ void MetalGarlandsEffect::Render(Effect *effect, const SettingsMap &SettingsMap,
     float oset = buffer.GetEffectTimeIntervalPosition();
     int GarlandType = SettingsMap.GetInt("SLIDER_Garlands_Type", sTypeDefault);
     int Spacing = GetValueCurveInt("Garlands_Spacing", sSpacingDefault, SettingsMap, oset, sSpacingMin, sSpacingMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
-    float cycles = GetValueCurveDouble("Garlands_Cycles", sCyclesDefault, SettingsMap, oset, sCyclesMin, sCyclesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sCyclesDivisor);
 
     if (Spacing < 1) {
         Spacing = 1;
     }
     int dir = GarlandsEffect::GetDirection(SettingsMap.Get("CHOICE_Garlands_Direction", sDirectionDefault));
-    double position = buffer.GetEffectTimeIntervalPosition(cycles);
+    double position = GetGarlandsPosition(buffer, SettingsMap, oset);
     if (dir > 3) {
         dir -= 4;
         if (position > 0.5) {

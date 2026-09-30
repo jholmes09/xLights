@@ -18,6 +18,7 @@
 
 #include "ispc/ShimmerFunctions.ispc.h"
 #include "Parallel.h"
+#include "EffectTempo.h"
 
 #include <algorithm>
 
@@ -52,6 +53,11 @@ void ShimmerEffect::OnMetadataLoaded()
     sUseAllColorsDefault = GetBoolDefault("Shimmer_Use_All_Colors", sUseAllColorsDefault);
 }
 
+void ShimmerEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "Shimmer", oldname, newname);
+}
+
 bool ShimmerEffect::CalcFrameState(const SettingsMap& SettingsMap, RenderBuffer& buffer, int& colorIdx, bool& useAllColors)
 {
     // Defaults were cached from Shimmer.json in OnMetadataLoaded().
@@ -66,9 +72,11 @@ bool ShimmerEffect::CalcFrameState(const SettingsMap& SettingsMap, RenderBuffer&
     bool pre2017_7 = SettingsMap.GetBool("CHECKBOX_PRE_2017_7", false);
     int colorcnt = buffer.GetColorCount();
 
+    EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "Shimmer", buffer, GetSequenceElements(buffer));
+
     colorIdx = 0;
     if (pre2017_7) {
-        double position = buffer.GetEffectTimeIntervalPosition(cycles);
+        double position = tempo.active ? tempo.Position() : buffer.GetEffectTimeIntervalPosition(cycles);
 
         colorIdx = round(position * 0.999 * (double)colorcnt);
 
@@ -81,7 +89,7 @@ bool ShimmerEffect::CalcFrameState(const SettingsMap& SettingsMap, RenderBuffer&
         }
     } else {
         // If cycles are too high maximise out at on and off
-        if (cycles > ((double)buffer.curEffEndPer - (double)buffer.curEffStartPer) / 2.0) {
+        if (!tempo.active && cycles > ((double)buffer.curEffEndPer - (double)buffer.curEffStartPer) / 2.0) {
             colorIdx = (buffer.curPeriod - buffer.curEffStartPer) % (2 * colorcnt);
             if (colorIdx % 2 == 0) {
                 colorIdx /= 2;
@@ -89,7 +97,7 @@ bool ShimmerEffect::CalcFrameState(const SettingsMap& SettingsMap, RenderBuffer&
                 return false;
             }
         } else {
-            double position = buffer.GetEffectTimeIntervalPosition(cycles);
+            double position = tempo.active ? tempo.Position() : buffer.GetEffectTimeIntervalPosition(cycles);
             if (position > 1.0)
                 position = 0.0;
 
@@ -100,7 +108,8 @@ bool ShimmerEffect::CalcFrameState(const SettingsMap& SettingsMap, RenderBuffer&
             // now we need to work out the color
 
             // scale up the position
-            int cycle = ((buffer.curPeriod - buffer.curEffStartPer) * cycles) / (buffer.curEffEndPer - buffer.curEffStartPer);
+            int cycle = tempo.active ? (int)std::floor(tempo.phase)
+                                     : ((buffer.curPeriod - buffer.curEffStartPer) * cycles) / (buffer.curEffEndPer - buffer.curEffStartPer);
             colorIdx = cycle % colorcnt;
         }
     }

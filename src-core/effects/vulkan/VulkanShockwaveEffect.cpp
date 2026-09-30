@@ -18,6 +18,7 @@
 #include "../../render/Effect.h"
 #include "../../render/RenderBuffer.h"
 #include "../../render/SequenceElements.h"
+#include "../EffectTempo.h"
 #include "UtilClasses.h"
 
 static xlvk::uchar4 toUchar4(const xlColor& c) {
@@ -67,8 +68,12 @@ void VulkanShockwaveEffect::Render(Effect* effect, const SettingsMap& SettingsMa
             effect->GetParentEffectLayer()->GetParentElement()->GetSequenceElements()->AddRenderDependency(timingtrack, buffer.cur_model);
         }
     }
+    // BPM mode: one cycle per beat; overrides both Cycles and the timing track.
+    const EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "Shockwave", buffer, GetSequenceElements(buffer));
     double eff_pos;
-    if (timingtrack.empty()) {
+    if (tempo.active) {
+        eff_pos = tempo.Position();
+    } else if (timingtrack.empty()) {
         int cycles = SettingsMap.GetInt("SLIDER_Shockwave_Cycles", sCyclesDefault);
         if (cycles < 1) cycles = 1;
         eff_pos = buffer.GetEffectTimeIntervalPosition(cycles);

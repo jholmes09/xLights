@@ -19,6 +19,7 @@ public:
     virtual ~GarlandsEffect();
     virtual void Render(Effect* effect, const SettingsMap& settings, RenderBuffer& buffer) override;
     virtual FrameParallelism GetFrameParallelism(const SettingsMap& settings) const override { return FrameParallelism::Pure; }
+    virtual void RenameTimingTrack(std::string oldname, std::string newname, Effect* effect) override;
     virtual bool needToAdjustSettings(const std::string& version) override;
     virtual void adjustSettings(const std::string& version, Effect* effect, bool removeDefaults = true) override;
     virtual bool AppropriateOnNodes() const override
@@ -51,5 +52,8 @@ public:
     static int GetDirection(const std::string& direction);
 
 protected:
+    // 0..1 position through the garland cycle, from Cycles or from the BPM /
+    // timing-track tempo modes (EffectTempo.h).
+    double GetGarlandsPosition(RenderBuffer& buffer, const SettingsMap& SettingsMap, float oset);
     virtual void OnMetadataLoaded() override;
 };

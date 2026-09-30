@@ -20,6 +20,7 @@
 #include "WarpEffect.h"
 #include "../render/Effect.h"
 #include "../render/RenderBuffer.h"
+#include "EffectTempo.h"
 #include "../models/Model.h"
 #include "UtilClasses.h"
 #include "../render/DissolveTransitionPattern.h"
@@ -217,6 +218,23 @@ std::list<std::string> WarpEffect::CheckEffectSettings(const SettingsMap& settin
     return res;
 }
 
+float WarpEffect::GetWarpScaledProgress(RenderBuffer& buffer, const SettingsMap& SettingsMap, float progress, float cycleCount, float intervalsPerCycle)
+{
+    EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "Warp", buffer, GetSequenceElements(buffer));
+    if (tempo.active) {
+        // One full cycle per beat / timing mark, ignoring Cycle Count. Wrapped at an even
+        // number so the in/out interval parity is preserved and float precision holds.
+        return (float)std::fmod(tempo.phase * intervalsPerCycle, 65536.0);
+    }
+    float intervalLen = 1.f / (intervalsPerCycle * cycleCount);
+    return progress / intervalLen;
+}
+
+void WarpEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "Warp", oldname, newname);
+}
+
 void WarpEffect::Render(Effect *eff, const SettingsMap &SettingsMap, RenderBuffer &buffer)
 {
     float progress = buffer.GetEffectTimeIntervalPosition(1.f);
@@ -295,8 +313,7 @@ void WarpEffect::Render(Effect *eff, const SettingsMap &SettingsMap, RenderBuffe
         params.speed = interpolate( params.speed, 0.0,0.5, 40.0,5.0, interpolater );
     } else if (warpType == WarpEffect::WarpType::SINGLE_WATER_DROP) {
         float cycleCount = std::strtof( warpStrCycleCount.c_str(), nullptr );
-        float intervalLen = 1.f / cycleCount;
-        float scaledProgress = progress / intervalLen;
+        float scaledProgress = GetWarpScaledProgress(buffer, SettingsMap, progress, cycleCount, 1.f);
         float intervalProgress, intervalIndex;
         intervalProgress = std::modf( scaledProgress, &intervalIndex );
         LinearInterpolater interpolater;
@@ -315,8 +332,7 @@ void WarpEffect::Render(Effect *eff, const SettingsMap &SettingsMap, RenderBuffe
         warpType == WarpEffect::WarpType::DROP) {
         if (warpTreatment == "constant") {
             float cycleCount = std::strtof(warpStrCycleCount.c_str(), nullptr);
-            float intervalLen = 1.f / (2 * cycleCount);
-            float scaledProgress = progress / intervalLen;
+            float scaledProgress = GetWarpScaledProgress(buffer, SettingsMap, progress, cycleCount, 2.f);
             float intervalProgress, intervalIndex;
             intervalProgress = std::modf(scaledProgress, &intervalIndex);
             if (int(intervalIndex) % 2)

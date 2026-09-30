@@ -183,8 +183,7 @@ void MetalWarpEffect::Render(Effect *effect, const SettingsMap &SettingsMap, Ren
         case WarpEffect::WarpType::SINGLE_WATER_DROP:
             {
                 float cycleCount = SettingsMap.GetFloat("TEXTCTRL_Warp_Cycle_Count", (float)sCycleCountDefault);
-                float intervalLen = 1.f / cycleCount;
-                float scaledProgress = progress / intervalLen;
+                float scaledProgress = GetWarpScaledProgress(buffer, SettingsMap, progress, cycleCount, 1.f);
                 float intervalProgress, intervalIndex;
                 intervalProgress = std::modf(scaledProgress, &intervalIndex);
                 float interpolatedProgress = interpolate(intervalProgress, 0.0, 0.20, 1.0, 0.45 );
@@ -194,8 +193,7 @@ void MetalWarpEffect::Render(Effect *effect, const SettingsMap &SettingsMap, Ren
         default:
             if (warpTreatment == "constant") {
                 float cycleCount = SettingsMap.GetFloat("TEXTCTRL_Warp_Cycle_Count", (float)sCycleCountDefault);
-                float intervalLen = 1.f / (2 * cycleCount );
-                float scaledProgress = progress / intervalLen;
+                float scaledProgress = GetWarpScaledProgress(buffer, SettingsMap, progress, cycleCount, 2.f);
                 float intervalProgress, intervalIndex;
                 intervalProgress = std::modf( scaledProgress, &intervalIndex );
                 if (int(intervalIndex) % 2) {

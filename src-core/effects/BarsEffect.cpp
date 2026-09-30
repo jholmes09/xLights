@@ -24,6 +24,7 @@
 
 #include "ispc/BarsFunctions.ispc.h"
 #include "Parallel.h"
+#include "EffectTempo.h"
 
 BarsEffect::BarsEffect(int i) :
     RenderableEffect(i, "Bars", bars_16, bars_24, bars_32, bars_48, bars_64)
@@ -38,11 +39,6 @@ double BarsEffect::sCyclesDefault = 1.0;
 double BarsEffect::sCyclesMin = 0;
 double BarsEffect::sCyclesMax = 300;
 int BarsEffect::sCyclesDivisor = 10;
-bool BarsEffect::sUseSpeedDefault = false;
-double BarsEffect::sSpeedDefault = 1.0;
-double BarsEffect::sSpeedMin = 0;
-double BarsEffect::sSpeedMax = 2000;
-int BarsEffect::sSpeedDivisor = 100;
 std::string BarsEffect::sDirectionDefault = "up";
 double BarsEffect::sCenterDefault = 0;
 double BarsEffect::sCenterMin = -100;
@@ -66,11 +62,6 @@ void BarsEffect::OnMetadataLoaded()
     sCyclesMin = GetMinFromMetadata("Bars_Cycles", sCyclesMin);
     sCyclesMax = GetMaxFromMetadata("Bars_Cycles", sCyclesMax);
     sCyclesDivisor = GetDivisorFromMetadata("Bars_Cycles", sCyclesDivisor);
-    sUseSpeedDefault = GetBoolDefault("Bars_UseSpeed", sUseSpeedDefault);
-    sSpeedDefault = GetDoubleDefault("Bars_Speed", sSpeedDefault);
-    sSpeedMin = GetMinFromMetadata("Bars_Speed", sSpeedMin);
-    sSpeedMax = GetMaxFromMetadata("Bars_Speed", sSpeedMax);
-    sSpeedDivisor = GetDivisorFromMetadata("Bars_Speed", sSpeedDivisor);
     sDirectionDefault = GetStringDefault("Bars_Direction", sDirectionDefault);
     sCenterDefault = GetDoubleDefault("Bars_Center", sCenterDefault);
     sCenterMin = GetMinFromMetadata("Bars_Center", sCenterMin);
@@ -141,15 +132,19 @@ void BarsEffect::GetSpatialColor(xlColor& color, size_t colorIndex, float x, flo
     }
 }
 
-double BarsEffect::GetEffectiveCycles(RenderBuffer& buffer, const SettingsMap& SettingsMap, float offset)
+double BarsEffect::GetBarsPosition(RenderBuffer& buffer, const SettingsMap& SettingsMap, float offset)
 {
-    if (!SettingsMap.GetBool("CHECKBOX_Bars_UseSpeed", sUseSpeedDefault)) {
-        return GetValueCurveDouble("Bars_Cycles", sCyclesDefault, SettingsMap, offset, sCyclesMin, sCyclesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sCyclesDivisor);
+    EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "Bars", buffer, GetSequenceElements(buffer));
+    if (tempo.active) {
+        return tempo.Position();
     }
+    double cycles = GetValueCurveDouble("Bars_Cycles", sCyclesDefault, SettingsMap, offset, sCyclesMin, sCyclesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sCyclesDivisor);
+    return buffer.GetEffectTimeIntervalPosition(cycles);
+}
 
-    double speed = GetValueCurveDouble("Bars_Speed", sSpeedDefault, SettingsMap, offset, sSpeedMin, sSpeedMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sSpeedDivisor);
-    double durationSec = (buffer.GetEndTimeMS() - buffer.GetStartTimeMS()) / 1000.0;
-    return speed * durationSec;
+void BarsEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "Bars", oldname, newname);
 }
 
 void BarsEffect::Render(Effect* effect, const SettingsMap& SettingsMap, RenderBuffer& buffer)
@@ -174,8 +169,7 @@ void BarsEffect::Render(Effect* effect, const SettingsMap& SettingsMap, RenderBu
 
         float ispcOffset = buffer.GetEffectTimeIntervalPosition();
         int ispcPaletteRepeat = GetValueCurveInt("Bars_BarCount", sBarCountDefault, SettingsMap, ispcOffset, sBarCountMin, sBarCountMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
-        double ispcCycles = GetEffectiveCycles(buffer, SettingsMap, ispcOffset);
-        double ispcPosition = buffer.GetEffectTimeIntervalPosition(ispcCycles);
+        double ispcPosition = GetBarsPosition(buffer, SettingsMap, ispcOffset);
         double ispcCenter = GetValueCurveDouble("Bars_Center", sCenterDefault, SettingsMap, ispcPosition, sCenterMin, sCenterMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
 
         bool ispcHighlight = SettingsMap.GetBool("CHECKBOX_Bars_Highlight", sHighlightDefault);
@@ -294,8 +288,7 @@ void BarsEffect::Render(Effect* effect, const SettingsMap& SettingsMap, RenderBu
 
     float offset = buffer.GetEffectTimeIntervalPosition();
     int paletteRepeat = GetValueCurveInt("Bars_BarCount", sBarCountDefault, SettingsMap, offset, sBarCountMin, sBarCountMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
-    double cycles = GetEffectiveCycles(buffer, SettingsMap, offset);
-    double position = buffer.GetEffectTimeIntervalPosition(cycles);
+    double position = GetBarsPosition(buffer, SettingsMap, offset);
     double center = GetValueCurveDouble("Bars_Center", sCenterDefault, SettingsMap, position, sCenterMin, sCenterMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
     int direction = GetDirection(SettingsMap["CHOICE_Bars_Direction"]);
     bool highlight = SettingsMap.GetBool("CHECKBOX_Bars_Highlight", sHighlightDefault);

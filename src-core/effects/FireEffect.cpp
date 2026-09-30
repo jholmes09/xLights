@@ -9,6 +9,7 @@
  **************************************************************/
 
 #include "FireEffect.h"
+#include "EffectTempo.h"
 #include "render/ValueCurve.h"
 
 #include <spdlog/fmt/fmt.h>
@@ -150,6 +151,11 @@ int FireEffect::FirePaletteSize() {
 
 int FireEffect::GetStyle(const SettingsMap& settings) {
     return settings.Get("CHOICE_Fire_Style", sStyleDefault) == "New Render Method" ? FIRE_STYLE_NEW : FIRE_STYLE_OLD;
+}
+
+void FireEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "Fire", oldname, newname);
 }
 
 bool FireEffect::needToAdjustSettings(const std::string& version) {
@@ -355,8 +361,13 @@ void FireEffect::Render(Effect* effect, const SettingsMap& SettingsMap, RenderBu
             HeightPct += 90 * f;
         }
     } else {
-        // cycles is 0 - 200 representing growth cycle count of 0 - 20
-        if (cycles > 0) {
+        // Tempo modes (BPM / timing track) replace Growth Cycles; grow-with-music above wins over both.
+        EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "Fire", buffer, GetSequenceElements(buffer));
+        if (tempo.active) {
+            double adjust = 0.5 - std::abs(tempo.Position() - 0.5);
+            HeightPct += adjust * 100;
+        } else if (cycles > 0) {
+            // cycles is 0 - 200 representing growth cycle count of 0 - 20
             double adjust = buffer.GetEffectTimeIntervalPosition(cycles);
             adjust = 0.5 - std::abs(adjust - 0.5);
             HeightPct += adjust * 100;

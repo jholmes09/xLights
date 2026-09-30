@@ -27,6 +27,7 @@ public:
     {
         return true;
     }
+    virtual void RenameTimingTrack(std::string oldname, std::string newname, Effect* effect) override;
 
     static int sBarCountDefault;
     static int sBarCountMin;
@@ -35,11 +36,6 @@ public:
     static double sCyclesMin;
     static double sCyclesMax;
     static int sCyclesDivisor;
-    static bool sUseSpeedDefault;
-    static double sSpeedDefault;
-    static double sSpeedMin;
-    static double sSpeedMax;
-    static int sSpeedDivisor;
     static std::string sDirectionDefault;
     static double sCenterDefault;
     static double sCenterMin;
@@ -52,9 +48,7 @@ public:
 protected:
     virtual void OnMetadataLoaded() override;
     void GetSpatialColor(xlColor& color, size_t colorIndex, float x, float y, RenderBuffer& buffer, bool gradient, const xlColor& highlightColor, bool highlight, bool show3d, int BarHt, int n, float pct, int color2Index);
-    // Cycles normally comes straight off the value curve. When Bars_UseSpeed is
-    // checked, Bars_Speed (cycles/second) is scaled by the effect's current
-    // duration instead, so the scroll rate holds steady as the effect is trimmed
-    // on the timeline rather than the total repeat count holding steady.
-    double GetEffectiveCycles(RenderBuffer& buffer, const SettingsMap& SettingsMap, float offset);
+    // 0..1 position within the current scroll cycle, from Cycles or from the
+    // BPM / timing-track tempo modes (EffectTempo.h).
+    double GetBarsPosition(RenderBuffer& buffer, const SettingsMap& SettingsMap, float offset);
 };

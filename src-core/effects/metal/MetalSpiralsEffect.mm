@@ -110,7 +110,7 @@ void MetalSpiralsEffect::Render(Effect *effect, const SettingsMap &SettingsMap, 
     double spiralGap = deltaStrands - SpiralThickness;
 
     int Direction = Movement > 0.001f ? 1 : (Movement < -0.001f ? -1 : 0);
-    double position = buffer.GetEffectTimeIntervalPosition(std::abs(Movement));
+    double position = GetSpiralsPosition(buffer, SettingsMap, Movement);
     long ThicknessState = 0;
     if (grow && shrink) {
         ThicknessState = position <= 0.5 ? spiralGap * (position * 2) : spiralGap * ((1.0 - position) * 2);

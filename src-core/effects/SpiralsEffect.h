@@ -24,6 +24,7 @@ public:
     {
         return true;
     }
+    virtual void RenameTimingTrack(std::string oldname, std::string newname, Effect* effect) override;
 
     // Cached from Spirals.json by OnMetadataLoaded(). Exposed as statics so
     // the Metal subclass can read them via unqualified name.
@@ -48,4 +49,7 @@ public:
 
 protected:
     virtual void OnMetadataLoaded() override;
+    // 0..1 position within the current cycle: from Movement in Cycles mode, or
+    // from the BPM / timing-track tempo (direction still comes from Movement's sign).
+    double GetSpiralsPosition(RenderBuffer& buffer, const SettingsMap& SettingsMap, float Movement);
 };

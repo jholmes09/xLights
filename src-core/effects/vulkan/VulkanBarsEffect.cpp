@@ -59,8 +59,7 @@ void VulkanBarsEffect::Render(Effect* effect, const SettingsMap& SettingsMap, Re
 
     float offset = buffer.GetEffectTimeIntervalPosition();
     int paletteRepeat = GetValueCurveInt("Bars_BarCount", sBarCountDefault, SettingsMap, offset, sBarCountMin, sBarCountMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
-    double cycles = GetEffectiveCycles(buffer, SettingsMap, offset);
-    double position = buffer.GetEffectTimeIntervalPosition(cycles);
+    double position = GetBarsPosition(buffer, SettingsMap, offset);
     double center = GetValueCurveDouble("Bars_Center", sCenterDefault, SettingsMap, position, sCenterMin, sCenterMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
 
     const std::string& dirStr = SettingsMap["CHOICE_Bars_Direction"];

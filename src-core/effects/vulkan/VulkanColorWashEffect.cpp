@@ -53,14 +53,13 @@ void VulkanColorWashEffect::Render(Effect* effect, const SettingsMap& SettingsMa
     }
 
     float oset = buffer.GetEffectTimeIntervalPosition();
-    float cycles = GetValueCurveDouble("ColorWash_Cycles", sCyclesDefault, SettingsMap, oset, sCyclesMin, sCyclesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sCyclesDivisor);
     bool horizFade       = SettingsMap.GetBool("CHECKBOX_ColorWash_HFade", sHFadeDefault);
     bool vertFade        = SettingsMap.GetBool("CHECKBOX_ColorWash_VFade", sVFadeDefault);
     bool reverseFades    = SettingsMap.GetBool("CHECKBOX_ColorWash_ReverseFades", sReverseFadesDefault);
     bool shimmer         = SettingsMap.GetBool("CHECKBOX_ColorWash_Shimmer", sShimmerDefault);
     bool circularPalette = SettingsMap.GetBool("CHECKBOX_ColorWash_CircularPalette", sCircularPaletteDefault);
 
-    double position = buffer.GetEffectTimeIntervalPosition(cycles);
+    double position = GetColorWashPosition(buffer, SettingsMap, oset);
     xlColor color;
     buffer.GetMultiColorBlend(position, circularPalette, color);
 

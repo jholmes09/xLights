@@ -96,6 +96,31 @@
             "description": "Number of times the shockwave ring expands from Radius1 to Radius2 over the effect duration. In timing track mode, this many rings fire per timing mark."
         },
         {
+            "id": "Shockwave_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM"
+            ],
+            "default": "Cycles",
+            "lockable": true,
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length."
+        },
+        {
+            "id": "Shockwave_BPM",
+            "label": "BPM",
+            "type": "float",
+            "controlType": "slider",
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
+            "lockable": true,
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
             "id": "Shockwave_Blend_Edges",
             "label": "Blend Edges",
             "type": "bool",
@@ -171,6 +196,8 @@
                     "properties": [
                         "Shockwave_Accel",
                         "Shockwave_Cycles",
+                        "Shockwave_TempoMode",
+                        "Shockwave_BPM",
                         "Shockwave_Blend_Edges",
                         "Shockwave_Scale",
                         "Shockwave_TimingTrack",
@@ -191,6 +218,24 @@
         {
             "when": { "property": "Shockwave_TimingTrack", "oneOf": [""] },
             "disable": ["Shockwave_FilterLabel", "Shockwave_FilterRegex", "Shockwave_Duration"]
+        },
+        {
+            "when": {
+                "property": "Shockwave_TempoMode",
+                "equals": "BPM"
+            },
+            "show": [
+                "Shockwave_BPM"
+            ]
+        },
+        {
+            "when": {
+                "property": "Shockwave_TempoMode",
+                "equals": "Cycles"
+            },
+            "show": [
+                "Shockwave_Cycles"
+            ]
         }
     ]
 }

@@ -19,6 +19,7 @@
 #include "../render/RenderBuffer.h"
 #include "../render/SequenceElements.h"
 #include "UtilClasses.h"
+#include "EffectTempo.h"
 
 #define XLIGHTS_FX 
 #include "FX.h"
@@ -415,11 +416,13 @@ void SingleStrandEffect::Render(Effect* effect, const SettingsMap& SettingsMap, 
                              GetValueCurveInt("FX_Intensity", sFXIntensityDefault, SettingsMap, eff_pos, sFXIntensityMin, sFXIntensityMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS()),
                              GetValueCurveInt("FX_Speed", sFXSpeedDefault, SettingsMap, eff_pos, sFXSpeedMin, sFXSpeedMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS()));
     } else {
+        const EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "SingleStrand", buffer, GetSequenceElements(buffer));
         RenderSingleStrandChase(buffer, effect, *cache,
                                 GetValueCurveInt("Number_Chases", sChasesDefault, SettingsMap, eff_pos, sChasesMin, sChasesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS()),
                                 GetValueCurveInt("Color_Mix1", sColourMixDefault, SettingsMap, eff_pos, sColourMixMin, sColourMixMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS()),
                                 GetValueCurveDouble("Chase_Rotations", sRotationsDefault, SettingsMap, eff_pos, sRotationsMin, sRotationsMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sRotationsDivisor),
-                                GetValueCurveDouble("Chase_Offset", sOffsetDefault, SettingsMap, eff_pos, sOffsetMin, sOffsetMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sOffsetDivisor));
+                                GetValueCurveDouble("Chase_Offset", sOffsetDefault, SettingsMap, eff_pos, sOffsetMin, sOffsetMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sOffsetDivisor),
+                                tempo.active, tempo.Position());
     }
 }
 
@@ -574,14 +577,19 @@ void SingleStrandEffect::RenderSingleStrandFX(RenderBuffer& buffer, Effect* eff,
 
 void SingleStrandEffect::RenderSingleStrandChase(RenderBuffer& buffer, Effect* eff,
     const SingleStrandRenderCache& cache, int Number_Chases, int chaseSize,
-    float chaseSpeed, float offset)
+    float chaseSpeed, float offset, bool bpmActive, double bpmPosition)
 {
     // When a timing track is selected, the chase performs chaseSpeed (Cycles) traversals
     // between each pair of timing marks instead of over the whole effect duration. Outside
     // the marked region (before the first mark / after the last mark) nothing is drawn, the
     // same convention VUMeterEffect::GetTimingEvent-based renders use.
+    //
+    // BPM mode overrides all of that: one traversal per beat (chaseSpeed is treated as 1) and
+    // the chase timing track is ignored.
     Effect* timingEvent = nullptr;
-    if (!cache.timingTrack.empty()) {
+    if (bpmActive) {
+        chaseSpeed = 1.0f;
+    } else if (!cache.timingTrack.empty()) {
         timingEvent = GetTimingEvent(buffer, cache.timingTrack, (uint32_t)(buffer.curPeriod * buffer.frameTimeInMs));
         if (timingEvent == nullptr) {
             return;
@@ -695,7 +703,9 @@ void SingleStrandEffect::RenderSingleStrandChase(RenderBuffer& buffer, Effect* e
 
     // This is a 0.0-1.0 value that determine how far along the current chase cycle we are
     double basePos;
-    if (timingEvent != nullptr) {
+    if (bpmActive) {
+        basePos = bpmPosition;
+    } else if (timingEvent != nullptr) {
         double lengthOfTiming = timingEvent->GetEndTimeMS() - timingEvent->GetStartTimeMS();
         if (lengthOfTiming < 1) lengthOfTiming = 1;
         basePos = (buffer.curPeriod * buffer.frameTimeInMs - timingEvent->GetStartTimeMS()) / lengthOfTiming;

@@ -18,6 +18,7 @@
 
 #include "ispc/ColorWashFunctions.ispc.h"
 #include "Parallel.h"
+#include "EffectTempo.h"
 
 #include <spdlog/fmt/fmt.h>
 
@@ -79,10 +80,24 @@ int ColorWashEffect::DrawEffectBackground(const Effect *e, int x1, int y1, int x
     return 2;
 }
 
+double ColorWashEffect::GetColorWashPosition(RenderBuffer& buffer, const SettingsMap& SettingsMap, float oset)
+{
+    EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "ColorWash", buffer, GetSequenceElements(buffer));
+    if (tempo.active) {
+        return tempo.Position();
+    }
+    float cycles = GetValueCurveDouble("ColorWash_Cycles", sCyclesDefault, SettingsMap, oset, sCyclesMin, sCyclesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sCyclesDivisor);
+    return buffer.GetEffectTimeIntervalPosition(cycles);
+}
+
+void ColorWashEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "ColorWash", oldname, newname);
+}
+
 void ColorWashEffect::Render(Effect *effect, const SettingsMap &SettingsMap, RenderBuffer &buffer) {
 
     float oset = buffer.GetEffectTimeIntervalPosition();
-    float cycles = GetValueCurveDouble("ColorWash_Cycles", sCyclesDefault, SettingsMap, oset, sCyclesMin, sCyclesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sCyclesDivisor);
 
     bool HorizFade = SettingsMap.GetBool(CHECKBOX_ColorWash_HFade, sHFadeDefault);
     bool VertFade = SettingsMap.GetBool(CHECKBOX_ColorWash_VFade, sVFadeDefault);
@@ -114,7 +129,7 @@ void ColorWashEffect::Render(Effect *effect, const SettingsMap &SettingsMap, Ren
         cwdata.color.v[0] = cwdata.color.v[1] = cwdata.color.v[2] = cwdata.color.v[3] = 0;
         cwdata.colorH = cwdata.colorS = cwdata.colorV = 0.0f;
     } else {
-        double position = buffer.GetEffectTimeIntervalPosition(cycles);
+        double position = GetColorWashPosition(buffer, SettingsMap, oset);
         buffer.GetMultiColorBlend(position, circularPalette, color);
         orig = color;
         cwdata.color.v[0] = color.red;
