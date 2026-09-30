@@ -74,6 +74,8 @@
             "min": 10,
             "max": 4000,
             "multiplierButtons": [0.25, 0.5, 2],
+            "tapTempo": true,
+            "bpmFromTrack": true,
             "lockable": true,
             "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
         },
