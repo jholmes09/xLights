@@ -78,7 +78,7 @@ void VulkanGalaxyEffect::Render(Effect* effect, const SettingsMap& SettingsMap, 
         return;
     }
 
-    double eff_pos_adj = buffer.calcAccel(eff_pos, acceleration);
+    double eff_pos_adj = GetGalaxyPosition(buffer, SettingsMap, eff_pos, acceleration);
     double revs = (double)revolutions;
     double pos_x = buffer.BufferWi * center_x / 100.0;
     double pos_y = buffer.BufferHt * center_y / 100.0;

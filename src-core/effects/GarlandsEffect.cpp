@@ -14,6 +14,7 @@
 #include "../render/RenderBuffer.h"
 #include "UtilClasses.h"
 #include "Parallel.h"
+#include "EffectTempo.h"
 
 #include "ispc/GarlandsFunctions.ispc.h"
 
@@ -105,17 +106,31 @@ int GarlandsEffect::GetDirection(const std::string &direction) {
     return 0;
 }
 
+double GarlandsEffect::GetGarlandsPosition(RenderBuffer& buffer, const SettingsMap& SettingsMap, float oset)
+{
+    EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "Garlands", buffer, GetSequenceElements(buffer));
+    if (tempo.active) {
+        return tempo.Position();
+    }
+    float cycles = GetValueCurveDouble("Garlands_Cycles", sCyclesDefault, SettingsMap, oset, sCyclesMin, sCyclesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sCyclesDivisor);
+    return buffer.GetEffectTimeIntervalPosition(cycles);
+}
+
+void GarlandsEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "Garlands", oldname, newname);
+}
+
 void GarlandsEffect::Render(Effect *effect, const SettingsMap &SettingsMap, RenderBuffer &buffer) {
     float oset = buffer.GetEffectTimeIntervalPosition();
     int GarlandType = SettingsMap.GetInt("SLIDER_Garlands_Type", sTypeDefault);
     int Spacing = GetValueCurveInt("Garlands_Spacing", sSpacingDefault, SettingsMap, oset, sSpacingMin, sSpacingMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
-    float cycles = GetValueCurveDouble("Garlands_Cycles", sCyclesDefault, SettingsMap, oset, sCyclesMin, sCyclesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sCyclesDivisor);
 
     if (Spacing < 1) {
         Spacing = 1;
     }
     int dir = GetDirection(SettingsMap.Get("CHOICE_Garlands_Direction", sDirectionDefault));
-    double position = buffer.GetEffectTimeIntervalPosition(cycles);
+    double position = GetGarlandsPosition(buffer, SettingsMap, oset);
     if (dir > 3) {
         dir -= 4;
         if (position > 0.5) {

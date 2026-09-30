@@ -26,28 +26,42 @@
             "description": "Number of times the bars scroll completely across the model during the effect. Higher values make the bars move faster."
         },
         {
-            "id": "Bars_UseSpeed",
-            "label": "Use Fixed Speed",
-            "type": "bool",
-            "controlType": "checkbox",
-            "default": false,
+            "id": "Bars_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM",
+                "Timing Track"
+            ],
+            "default": "Cycles",
             "lockable": true,
-            "tooltip": "Move the bars at a constant rate regardless of how long this effect is on the timeline, instead of spreading Cycles across the whole effect duration.",
-            "description": "When enabled, Speed controls how fast the bars scroll in cycles per second, and the effect keeps that same speed no matter how its length is trimmed on the timeline."
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length. Timing Track runs one cycle per mark on the chosen timing track."
         },
         {
-            "id": "Bars_Speed",
-            "label": "Speed",
+            "id": "Bars_BPM",
+            "label": "BPM",
             "type": "float",
             "controlType": "slider",
-            "default": 1.0,
-            "divisor": 100,
-            "valueCurve": true,
-            "min": 0,
-            "max": 2000,
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
             "lockable": true,
-            "tooltip": "Cycles per second.",
-            "description": "Constant rate the bars scroll at, in cycles per second, used when Use Fixed Speed is checked."
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
+            "id": "Bars_TempoTrack",
+            "label": "Timing Track",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [],
+            "default": "",
+            "dynamicOptions": "timingTracks",
+            "expandToFill": true,
+            "lockable": true,
+            "description": "Timing track to follow when Timing is Timing Track. One cycle per mark; the effect holds still before the first mark, in gaps, and after the last mark."
         },
         {
             "id": "Bars_Direction",
@@ -142,23 +156,29 @@
         },
         {
             "when": {
-                "property": "Bars_UseSpeed",
-                "equals": true
+                "property": "Bars_TempoMode",
+                "equals": "BPM"
             },
-            "enable": [
-                "Bars_Speed"
-            ],
-            "disable": [
-                "Bars_Cycles"
+            "show": [
+                "Bars_BPM"
             ]
         },
         {
             "when": {
-                "property": "Bars_UseSpeed",
-                "equals": false
+                "property": "Bars_TempoMode",
+                "equals": "Timing Track"
             },
-            "disable": [
-                "Bars_Speed"
+            "show": [
+                "Bars_TempoTrack"
+            ]
+        },
+        {
+            "when": {
+                "property": "Bars_TempoMode",
+                "equals": "Cycles"
+            },
+            "show": [
+                "Bars_Cycles"
             ]
         }
     ]

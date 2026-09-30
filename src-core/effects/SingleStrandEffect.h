@@ -75,7 +75,8 @@ protected:
 private:
     void RenderSingleStrandChase(RenderBuffer& buffer, Effect* eff,
                                  const SingleStrandRenderCache& cache, int Number_Chases, int chaseSize,
-                                 float chaseSpeed, float offset);
+                                 float chaseSpeed, float offset,
+                                 bool bpmActive = false, double bpmPosition = 0.0);
     // indexOut, when non-null, receives the 0-based ordinal of the returned mark
     // among all marks on the track (used to step the Skips pattern once per mark).
     Effect* GetTimingEvent(RenderBuffer& buffer, const std::string& timingTrack, uint32_t ms, int* indexOut = nullptr);

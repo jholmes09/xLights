@@ -76,6 +76,44 @@
             "description": "Total number of revolutions the fan rotates over the duration of the effect. settingPrefix:SLIDER because FanEffect::Render calls GetValueCurveInt which reads SLIDER_<id> as a raw pre-divisor int and divides inside ValueCurve."
         },
         {
+            "id": "Fan_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM",
+                "Timing Track"
+            ],
+            "default": "Cycles",
+            "lockable": true,
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length. Timing Track runs one cycle per mark on the chosen timing track."
+        },
+        {
+            "id": "Fan_BPM",
+            "label": "BPM",
+            "type": "float",
+            "controlType": "slider",
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
+            "lockable": true,
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
+            "id": "Fan_TempoTrack",
+            "label": "Timing Track",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [],
+            "default": "",
+            "dynamicOptions": "timingTracks",
+            "expandToFill": true,
+            "lockable": true,
+            "description": "Timing track to follow when Timing is Timing Track. One cycle per mark; the effect holds still before the first mark, in gaps, and after the last mark."
+        },
+        {
             "id": "Fan_Num_Blades",
             "label": "# Blades",
             "type": "int",
@@ -196,7 +234,10 @@
                         "Fan_Start_Radius",
                         "Fan_Start_Angle",
                         "Fan_End_Radius",
-                        "Fan_Revolutions"
+                        "Fan_Revolutions",
+                        "Fan_TempoMode",
+                        "Fan_BPM",
+                        "Fan_TempoTrack"
                     ]
                 },
                 {
@@ -221,6 +262,35 @@
                 }
             ],
             "settingKey": "E_NOTEBOOK_Fan"
+        }
+    ],
+    "visibilityRules": [
+        {
+            "when": {
+                "property": "Fan_TempoMode",
+                "equals": "BPM"
+            },
+            "show": [
+                "Fan_BPM"
+            ]
+        },
+        {
+            "when": {
+                "property": "Fan_TempoMode",
+                "equals": "Timing Track"
+            },
+            "show": [
+                "Fan_TempoTrack"
+            ]
+        },
+        {
+            "when": {
+                "property": "Fan_TempoMode",
+                "equals": "Cycles"
+            },
+            "show": [
+                "Fan_Revolutions"
+            ]
         }
     ]
 }

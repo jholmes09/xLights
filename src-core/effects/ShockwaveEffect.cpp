@@ -25,6 +25,7 @@
 
 #include "ispc/ShockwaveFunctions.ispc.h"
 #include "Parallel.h"
+#include "EffectTempo.h"
 
 class ShockwaveRenderCache : public EffectRenderCache {
 public:
@@ -226,8 +227,12 @@ void ShockwaveEffect::Render(Effect* effect, const SettingsMap& SettingsMap, Ren
         }
     }
 
+    // BPM mode: one cycle per beat; overrides both Cycles and the timing track.
+    const EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "Shockwave", buffer, GetSequenceElements(buffer));
     double eff_pos;
-    if (timingtrack.empty()) {
+    if (tempo.active) {
+        eff_pos = tempo.Position();
+    } else if (timingtrack.empty()) {
         int cycles = SettingsMap.GetInt("SLIDER_Shockwave_Cycles", sCyclesDefault);
         if (cycles < 1) cycles = 1;
         eff_pos = buffer.GetEffectTimeIntervalPosition(cycles);

@@ -39,6 +39,44 @@
             "description": "Number of times the fire height oscillates (grows and shrinks) over the effect duration. Zero means no oscillation."
         },
         {
+            "id": "Fire_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM",
+                "Timing Track"
+            ],
+            "default": "Cycles",
+            "lockable": true,
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length. Timing Track runs one cycle per mark on the chosen timing track."
+        },
+        {
+            "id": "Fire_BPM",
+            "label": "BPM",
+            "type": "float",
+            "controlType": "slider",
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
+            "lockable": true,
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
+            "id": "Fire_TempoTrack",
+            "label": "Timing Track",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [],
+            "default": "",
+            "dynamicOptions": "timingTracks",
+            "expandToFill": true,
+            "lockable": true,
+            "description": "Timing track to follow when Timing is Timing Track. One cycle per mark; the effect holds still before the first mark, in gaps, and after the last mark."
+        },
+        {
             "id": "Fire_GrowWithMusic",
             "label": "Grow with music",
             "type": "bool",
@@ -82,6 +120,36 @@
             },
             "disable": [
                 "Fire_Height",
+                "Fire_GrowthCycles",
+                "Fire_TempoMode",
+                "Fire_BPM",
+                "Fire_TempoTrack"
+            ]
+        },
+        {
+            "when": {
+                "property": "Fire_TempoMode",
+                "equals": "BPM"
+            },
+            "show": [
+                "Fire_BPM"
+            ]
+        },
+        {
+            "when": {
+                "property": "Fire_TempoMode",
+                "equals": "Timing Track"
+            },
+            "show": [
+                "Fire_TempoTrack"
+            ]
+        },
+        {
+            "when": {
+                "property": "Fire_TempoMode",
+                "equals": "Cycles"
+            },
+            "show": [
                 "Fire_GrowthCycles"
             ]
         }

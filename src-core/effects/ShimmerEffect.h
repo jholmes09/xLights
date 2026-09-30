@@ -27,6 +27,7 @@ public:
     {
         return true;
     }
+    virtual void RenameTimingTrack(std::string oldname, std::string newname, Effect* effect) override;
 
     // Cached from Shimmer.json by OnMetadataLoaded() — see feedback note on
     // using statics so import/legacy code can read them directly.

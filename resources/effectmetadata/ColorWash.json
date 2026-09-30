@@ -15,6 +15,44 @@
             "description": "Number of times the full palette color sequence cycles during the effect. Higher values make the color transitions happen faster."
         },
         {
+            "id": "ColorWash_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM",
+                "Timing Track"
+            ],
+            "default": "Cycles",
+            "lockable": true,
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length. Timing Track runs one cycle per mark on the chosen timing track."
+        },
+        {
+            "id": "ColorWash_BPM",
+            "label": "BPM",
+            "type": "float",
+            "controlType": "slider",
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
+            "lockable": true,
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
+            "id": "ColorWash_TempoTrack",
+            "label": "Timing Track",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [],
+            "default": "",
+            "dynamicOptions": "timingTracks",
+            "expandToFill": true,
+            "lockable": true,
+            "description": "Timing track to follow when Timing is Timing Track. One cycle per mark; the effect holds still before the first mark, in gaps, and after the last mark."
+        },
+        {
             "id": "ColorWash_VFade",
             "label": "Vertical Fade",
             "type": "bool",
@@ -55,6 +93,35 @@
             "controlType": "checkbox",
             "default": false,
             "description": "Makes the palette wrap around by blending the last color back into the first, creating a seamless continuous color loop instead of stopping at the last color."
+        }
+    ],
+    "visibilityRules": [
+        {
+            "when": {
+                "property": "ColorWash_TempoMode",
+                "equals": "BPM"
+            },
+            "show": [
+                "ColorWash_BPM"
+            ]
+        },
+        {
+            "when": {
+                "property": "ColorWash_TempoMode",
+                "equals": "Timing Track"
+            },
+            "show": [
+                "ColorWash_TempoTrack"
+            ]
+        },
+        {
+            "when": {
+                "property": "ColorWash_TempoMode",
+                "equals": "Cycles"
+            },
+            "show": [
+                "ColorWash_Cycles"
+            ]
         }
     ]
 }

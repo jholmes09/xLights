@@ -54,6 +54,31 @@
             "description": "Number of complete chase traversals over the effect duration. Higher values make the chase move faster."
         },
         {
+            "id": "SingleStrand_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM"
+            ],
+            "default": "Cycles",
+            "lockable": true,
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length."
+        },
+        {
+            "id": "SingleStrand_BPM",
+            "label": "BPM",
+            "type": "float",
+            "controlType": "slider",
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
+            "lockable": true,
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
             "id": "SingleStrand_TimingTrack",
             "label": "Timing Track",
             "type": "enum",
@@ -268,6 +293,8 @@
                         "Number_Chases",
                         "Color_Mix1",
                         "Chase_Rotations",
+                        "SingleStrand_TempoMode",
+                        "SingleStrand_BPM",
                         "SingleStrand_TimingTrack",
                         "Chase_Offset",
                         "Chase_Type1",
@@ -308,6 +335,8 @@
             },
             "disable": [
                 "Chase_Rotations",
+                "SingleStrand_TempoMode",
+                "SingleStrand_BPM",
                 "SingleStrand_TimingTrack"
             ]
         },
@@ -330,6 +359,24 @@
             },
             "disable": [
                 "Skips_TimingTrack"
+            ]
+        },
+        {
+            "when": {
+                "property": "SingleStrand_TempoMode",
+                "equals": "BPM"
+            },
+            "show": [
+                "SingleStrand_BPM"
+            ]
+        },
+        {
+            "when": {
+                "property": "SingleStrand_TempoMode",
+                "equals": "Cycles"
+            },
+            "show": [
+                "Chase_Rotations"
             ]
         }
     ]

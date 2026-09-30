@@ -47,6 +47,7 @@ public:
     {
         return false;
     }
+    virtual void RenameTimingTrack(std::string oldname, std::string newname, Effect* effect) override;
     virtual std::list<std::string> CheckEffectSettings(const SettingsMap& settings, AudioManager* media, Model* model, Effect* eff, bool renderCache) override;
 
     // Cached from Warp.json by OnMetadataLoaded().
@@ -64,4 +65,7 @@ public:
 
 protected:
     virtual void OnMetadataLoaded() override;
+    // Progress scaled to cycle intervals (intervalsPerCycle per cycle). Cycles mode:
+    // from effect progress and Cycle Count; BPM / timing-track mode: from the tempo.
+    float GetWarpScaledProgress(RenderBuffer& buffer, const SettingsMap& SettingsMap, float progress, float cycleCount, float intervalsPerCycle);
 };

@@ -157,7 +157,7 @@ void MetalFanEffect::Render(Effect *effect, const SettingsMap &SettingsMap, Rend
     fdata.color_angle     = (float)color_angle;
     fdata.element_angle   = (float)element_angle;
     fdata.element_size    = (float)element_size;
-    fdata.angle_offset    = (float)(eff_pos_adj * revs);
+    fdata.angle_offset    = (float)GetFanAngleOffset(buffer, SettingsMap, eff_pos_adj, revs);
     fdata.start_angle     = (float)start_angle;
     fdata.blade_angle     = (float)blade_angle;
     fdata.reverse_dir     = reverse_dir ? 1 : 0;

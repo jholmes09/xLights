@@ -11,6 +11,7 @@
 #include "SpiralsEffect.h"
 #include "../render/Effect.h"
 #include "../render/RenderBuffer.h"
+#include "EffectTempo.h"
 #include "UtilClasses.h"
 
 #include "../../include/spirals-16.xpm"
@@ -82,6 +83,24 @@ bool SpiralsEffect::SupportsLinearColorCurves(const SettingsMap &SettingsMap) co
     return !SettingsMap.GetBool("E_CHECKBOX_Spirals_Blend");
 }
 
+double SpiralsEffect::GetSpiralsPosition(RenderBuffer& buffer, const SettingsMap& SettingsMap, float Movement)
+{
+    EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "Spirals", buffer, GetSequenceElements(buffer));
+    if (tempo.active) {
+        // Tempo sets the speed; only the sign of Movement is used (for direction). 0 holds still.
+        if (Movement > -0.001f && Movement < 0.001f) {
+            return 0.0;
+        }
+        return tempo.Position();
+    }
+    return buffer.GetEffectTimeIntervalPosition(std::abs(Movement));
+}
+
+void SpiralsEffect::RenameTimingTrack(std::string oldname, std::string newname, Effect* effect)
+{
+    EffectTempo::RenameTrack(effect, "Spirals", oldname, newname);
+}
+
 void SpiralsEffect::Render(Effect *effect, const SettingsMap &SettingsMap, RenderBuffer &buffer) {
     float offset = buffer.GetEffectTimeIntervalPosition();
     int PaletteRepeat = GetValueCurveInt("Spirals_Count", sCountDefault, SettingsMap, offset, sCountMin, sCountMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
@@ -107,7 +126,7 @@ void SpiralsEffect::Render(Effect *effect, const SettingsMap &SettingsMap, Rende
     double spiralGap = deltaStrands - SpiralThickness;
 
     int Direction = Movement > 0.001 ? 1 : (Movement < -0.001 ? -1 : 0);
-    double position = buffer.GetEffectTimeIntervalPosition(std::abs(Movement));
+    double position = GetSpiralsPosition(buffer, SettingsMap, Movement);
     long ThicknessState = 0;
     if (grow && shrink) {
         ThicknessState = position <= 0.5 ? spiralGap * (position * 2) : spiralGap * ((1 - position) * 2);

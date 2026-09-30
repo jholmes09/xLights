@@ -141,6 +141,31 @@
             "description": "Number of complete ripple animation cycles over the effect duration. Higher values repeat the expand/contract motion more times."
         },
         {
+            "id": "Ripple_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM"
+            ],
+            "default": "Cycles",
+            "lockable": true,
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length."
+        },
+        {
+            "id": "Ripple_BPM",
+            "label": "BPM",
+            "type": "float",
+            "controlType": "slider",
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
+            "lockable": true,
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
             "id": "RIPPLE_POINTS",
             "label": "Points",
             "type": "int",
@@ -296,6 +321,24 @@
         {
             "when": { "property": "Ripple_TimingTrack", "oneOf": [""] },
             "disable": ["Ripple_FilterLabel", "Ripple_FilterRegex", "Ripple_Duration"]
+        },
+        {
+            "when": {
+                "property": "Ripple_TempoMode",
+                "equals": "BPM"
+            },
+            "show": [
+                "Ripple_BPM"
+            ]
+        },
+        {
+            "when": {
+                "property": "Ripple_TempoMode",
+                "equals": "Cycles"
+            },
+            "show": [
+                "Ripple_Cycles"
+            ]
         }
     ]
 }

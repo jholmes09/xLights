@@ -38,6 +38,7 @@
 #include "../../include/ripple-32.xpm"
 #include "../../include/ripple-48.xpm"
 #include "../../include/ripple-64.xpm"
+#include "EffectTempo.h"
 
 std::string RippleEffect::sDrawStyleDefault = "Old";
 std::string RippleEffect::sObjectToDrawDefault = "Circle";
@@ -1120,8 +1121,12 @@ void RippleEffect::Render(Effect* effect, const SettingsMap& SettingsMap, Render
         effect->GetParentEffectLayer()->GetParentElement()->GetSequenceElements()->AddRenderDependency(timingtrack, buffer.cur_model);
     }
 
+    // BPM mode: one cycle per beat; overrides both Cycles and the timing track.
+    const EffectTempo::Tempo tempo = EffectTempo::Get(SettingsMap, "Ripple", buffer, GetSequenceElements(buffer));
     double position;
-    if (timingtrack.empty()) {
+    if (tempo.active) {
+        position = tempo.Position();
+    } else if (timingtrack.empty()) {
         position = buffer.GetEffectTimeIntervalPosition(cycles); // how far are we into the effect; value is 0.0 to 1.0
     } else {
         position = getEffectPosition(buffer, SettingsMap, timingtrack, cycles);

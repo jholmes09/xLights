@@ -51,7 +51,45 @@
             "lockable": true,
             "min": -200,
             "max": 200,
-            "description": "Speed and direction of the spiral rotation. Positive values rotate in one direction, negative in the other. Zero keeps the spirals stationary."
+            "description": "Speed and direction of the spiral rotation. Positive values rotate in one direction, negative in the other. Zero keeps the spirals stationary. When Timing is BPM or Timing Track, the tempo sets the speed and only the sign of this value is used, for direction (zero holds still)."
+        },
+        {
+            "id": "Spirals_TempoMode",
+            "label": "Timing",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [
+                "Cycles",
+                "BPM",
+                "Timing Track"
+            ],
+            "default": "Cycles",
+            "lockable": true,
+            "description": "Cycles fits the motion to the effect's length. BPM runs one cycle per beat at a fixed tempo, regardless of effect length. Timing Track runs one cycle per mark on the chosen timing track."
+        },
+        {
+            "id": "Spirals_BPM",
+            "label": "BPM",
+            "type": "float",
+            "controlType": "slider",
+            "default": 120.0,
+            "divisor": 10,
+            "min": 10,
+            "max": 4000,
+            "lockable": true,
+            "description": "Tempo in beats per minute when Timing is BPM. One cycle per beat; halve the value for one cycle every two beats."
+        },
+        {
+            "id": "Spirals_TempoTrack",
+            "label": "Timing Track",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [],
+            "default": "",
+            "dynamicOptions": "timingTracks",
+            "expandToFill": true,
+            "lockable": true,
+            "description": "Timing track to follow when Timing is Timing Track. One cycle per mark; the effect holds still before the first mark, in gaps, and after the last mark."
         },
         {
             "id": "Spirals_Blend",
@@ -88,6 +126,26 @@
             "default": false,
             "lockable": true,
             "description": "When enabled, the spiral arms gradually decrease in thickness over the effect duration. When both Grow and Shrink are enabled, the arms grow then shrink."
+        }
+    ],
+    "visibilityRules": [
+        {
+            "when": {
+                "property": "Spirals_TempoMode",
+                "equals": "BPM"
+            },
+            "show": [
+                "Spirals_BPM"
+            ]
+        },
+        {
+            "when": {
+                "property": "Spirals_TempoMode",
+                "equals": "Timing Track"
+            },
+            "show": [
+                "Spirals_TempoTrack"
+            ]
         }
     ]
 }

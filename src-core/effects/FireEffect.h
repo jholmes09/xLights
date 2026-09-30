@@ -49,6 +49,7 @@ public:
     enum FireStyle { FIRE_STYLE_OLD = 0, FIRE_STYLE_NEW = 1 };
     static int GetStyle(const SettingsMap& settings);
 
+    virtual void RenameTimingTrack(std::string oldname, std::string newname, Effect* effect) override;
     virtual bool needToAdjustSettings(const std::string& version) override;
     virtual void adjustSettings(const std::string& version, Effect* effect, bool removeDefaults = true) override;
 
