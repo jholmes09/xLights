@@ -26,6 +26,30 @@
             "description": "Number of times the bars scroll completely across the model during the effect. Higher values make the bars move faster."
         },
         {
+            "id": "Bars_UseSpeed",
+            "label": "Use Fixed Speed",
+            "type": "bool",
+            "controlType": "checkbox",
+            "default": false,
+            "lockable": true,
+            "tooltip": "Move the bars at a constant rate regardless of how long this effect is on the timeline, instead of spreading Cycles across the whole effect duration.",
+            "description": "When enabled, Speed controls how fast the bars scroll in cycles per second, and the effect keeps that same speed no matter how its length is trimmed on the timeline."
+        },
+        {
+            "id": "Bars_Speed",
+            "label": "Speed",
+            "type": "float",
+            "controlType": "slider",
+            "default": 1.0,
+            "divisor": 100,
+            "valueCurve": true,
+            "min": 0,
+            "max": 2000,
+            "lockable": true,
+            "tooltip": "Cycles per second.",
+            "description": "Constant rate the bars scroll at, in cycles per second, used when Use Fixed Speed is checked."
+        },
+        {
             "id": "Bars_Direction",
             "label": "Direction",
             "type": "enum",
@@ -114,6 +138,27 @@
             },
             "enable": [
                 "Bars_Center"
+            ]
+        },
+        {
+            "when": {
+                "property": "Bars_UseSpeed",
+                "equals": true
+            },
+            "enable": [
+                "Bars_Speed"
+            ],
+            "disable": [
+                "Bars_Cycles"
+            ]
+        },
+        {
+            "when": {
+                "property": "Bars_UseSpeed",
+                "equals": false
+            },
+            "disable": [
+                "Bars_Speed"
             ]
         }
     ]
