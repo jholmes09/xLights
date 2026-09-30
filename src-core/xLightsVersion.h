@@ -19,13 +19,16 @@
 #else
 static const std::string xlights_version_string  = "2026.17";
 #endif
+// JHP fork: tag only what people read (title bar, About, splash). The saved
+// file version stays xlights_version_string so sequences stay compatible with
+// stock xLights and version-gated settings upgrades keep working.
 #ifdef DEBUG
-static const std::string xlights_qualifier       = " DEBUG";
+static const std::string xlights_qualifier       = " JHP DEBUG";
 #else
-static const std::string xlights_qualifier       = ""; // " BETA,ALPHA,PROD";
+static const std::string xlights_qualifier       = " JHP"; // " BETA,ALPHA,PROD";
 #endif
 extern const std::string xlights_build_date;
 
-inline std::string GetDisplayVersionString() { return xlights_version_string; }
+inline std::string GetDisplayVersionString() { return xlights_version_string + ".JHP"; }
 
 #define WXWIDGETS_VERSION "33"
