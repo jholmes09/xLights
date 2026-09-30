@@ -176,6 +176,28 @@
             "description": "Number of times the skip pattern shifts position over the effect duration. Higher values make the pattern appear to march along the strand."
         },
         {
+            "id": "Skips_UseTimingTrack",
+            "label": "Advance Per Timing Mark",
+            "type": "bool",
+            "controlType": "checkbox",
+            "default": false,
+            "lockable": true,
+            "tooltip": "Advance the skip pattern by one position at each mark on the timing track below, instead of spreading Number of Advances evenly across the effect duration.",
+            "description": "When enabled, the skip pattern steps forward by one position each time a new mark begins on the selected timing track. No pattern is drawn before the first mark or after the last mark."
+        },
+        {
+            "id": "Skips_TimingTrack",
+            "label": "Timing Track",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [],
+            "default": "",
+            "dynamicOptions": "timingTracks",
+            "expandToFill": true,
+            "lockable": true,
+            "description": "The timing track whose marks step the skip pattern forward when Advance Per Timing Mark is checked."
+        },
+        {
             "id": "Skips_Direction",
             "label": "Direction",
             "type": "enum",
@@ -260,6 +282,8 @@
                         "Skips_SkipSize",
                         "Skips_StartPos",
                         "Skips_Advance",
+                        "Skips_UseTimingTrack",
+                        "Skips_TimingTrack",
                         "Skips_Direction"
                     ]
                 },
@@ -285,6 +309,27 @@
             "disable": [
                 "Chase_Rotations",
                 "SingleStrand_TimingTrack"
+            ]
+        },
+        {
+            "when": {
+                "property": "Skips_UseTimingTrack",
+                "equals": true
+            },
+            "enable": [
+                "Skips_TimingTrack"
+            ],
+            "disable": [
+                "Skips_Advance"
+            ]
+        },
+        {
+            "when": {
+                "property": "Skips_UseTimingTrack",
+                "equals": false
+            },
+            "disable": [
+                "Skips_TimingTrack"
             ]
         }
     ]

@@ -57,6 +57,8 @@ int SingleStrandEffect::sSkipsSkipSizeDefault = 1;
 int SingleStrandEffect::sSkipsStartPosDefault = 1;
 int SingleStrandEffect::sSkipsAdvanceDefault = 0;
 std::string SingleStrandEffect::sTimingTrackDefault = "";
+bool SingleStrandEffect::sSkipsUseTimingTrackDefault = false;
+std::string SingleStrandEffect::sSkipsTimingTrackDefault = "";
 
 SingleStrandEffect::SingleStrandEffect(int id)
     : RenderableEffect(id, "SingleStrand", singleStrand_16, singleStrand_64, singleStrand_64, singleStrand_64, singleStrand_64)
@@ -96,6 +98,8 @@ void SingleStrandEffect::OnMetadataLoaded()
     sSkipsStartPosDefault = GetIntDefault("Skips_StartPos", sSkipsStartPosDefault);
     sSkipsAdvanceDefault = GetIntDefault("Skips_Advance", sSkipsAdvanceDefault);
     sTimingTrackDefault = GetStringDefault("SingleStrand_TimingTrack", sTimingTrackDefault);
+    sSkipsUseTimingTrackDefault = GetBoolDefault("Skips_UseTimingTrack", sSkipsUseTimingTrackDefault);
+    sSkipsTimingTrackDefault = GetStringDefault("Skips_TimingTrack", sSkipsTimingTrackDefault);
     // SingleStrand_FX / SingleStrand_FX_Palette defaults mismatch
     // (JSON="" vs C++="Blink"/"Default") — left as legacy literals.
 }
@@ -146,10 +150,19 @@ void SingleStrandEffect::RenameTimingTrack(std::string oldname, std::string newn
     {
         effect->GetSettings()["E_CHOICE_SingleStrand_TimingTrack"] = newname;
     }
+
+    std::string skipsTiming = effect->GetSettings().Get("E_CHOICE_Skips_TimingTrack", "");
+
+    if (skipsTiming == oldname)
+    {
+        effect->GetSettings()["E_CHOICE_Skips_TimingTrack"] = newname;
+    }
 }
 
-Effect* SingleStrandEffect::GetTimingEvent(RenderBuffer& buffer, const std::string& timingTrack, uint32_t ms)
+Effect* SingleStrandEffect::GetTimingEvent(RenderBuffer& buffer, const std::string& timingTrack, uint32_t ms, int* indexOut)
 {
+    if (indexOut != nullptr) *indexOut = -1;
+
     if (timingTrack.empty())
         return nullptr;
 
@@ -164,6 +177,7 @@ Effect* SingleStrandEffect::GetTimingEvent(RenderBuffer& buffer, const std::stri
     for (int j = 0; j < el->GetEffectCount(); j++) {
         Effect* e = el->GetEffect(j);
         if ((uint32_t)e->GetStartTimeMS() <= ms && (uint32_t)e->GetEndTimeMS() > ms) {
+            if (indexOut != nullptr) *indexOut = j;
             return e;
         }
         if ((uint32_t)e->GetStartTimeMS() > ms)
@@ -267,6 +281,8 @@ public:
             skipsStartPos = settings.GetInt("SLIDER_Skips_StartPos", SingleStrandEffect::sSkipsStartPosDefault);
             skipsAdvance = settings.GetInt("SLIDER_Skips_Advance", SingleStrandEffect::sSkipsAdvanceDefault);
             skipsDirection = mapDirection(settings["CHOICE_Skips_Direction"]);
+            skipsUseTimingTrack = settings.GetBool("CHECKBOX_Skips_UseTimingTrack", SingleStrandEffect::sSkipsUseTimingTrackDefault);
+            skipsTimingTrack = settings.Get("CHOICE_Skips_TimingTrack", SingleStrandEffect::sSkipsTimingTrackDefault);
             break;
         case MODE_FX:
             // SingleStrand_FX / SingleStrand_FX_Palette defaults mismatch
@@ -303,6 +319,8 @@ public:
     int skipsStartPos = 1;
     int skipsAdvance = 0;
     int skipsDirection = 0;
+    bool skipsUseTimingTrack = false;
+    std::string skipsTimingTrack;
 
     // FX
     std::string fx;
@@ -407,6 +425,18 @@ void SingleStrandEffect::Render(Effect* effect, const SettingsMap& SettingsMap, 
 
 void SingleStrandEffect::RenderSingleStrandSkips(RenderBuffer &buffer, Effect *eff, const SingleStrandRenderCache& cache)
 {
+    // When a timing track is selected, the pattern advances by exactly one position
+    // per mark instead of spreading Number of Advances evenly across the effect
+    // duration. Same convention as RenderSingleStrandChase's timing-track mode:
+    // nothing is drawn before the first mark or after the last mark.
+    int markIndex = -1;
+    if (cache.skipsUseTimingTrack && !cache.skipsTimingTrack.empty()) {
+        Effect* timingEvent = GetTimingEvent(buffer, cache.skipsTimingTrack, (uint32_t)(buffer.curPeriod * buffer.frameTimeInMs), &markIndex);
+        if (timingEvent == nullptr) {
+            return;
+        }
+    }
+
     const int Skips_BandSize = cache.skipsBandSize;
     const int Skips_SkipSize = cache.skipsSkipSize;
     const int advances = cache.skipsAdvance;
@@ -422,9 +452,15 @@ void SingleStrandEffect::RenderSingleStrandSkips(RenderBuffer &buffer, Effect *e
     }
 
     int colorcnt = (int)buffer.GetColorCount();
-    double position = buffer.GetEffectTimeIntervalPosition() * (advances + 1.0) * 0.99;
+    int stepIndex;
+    if (cache.skipsUseTimingTrack && !cache.skipsTimingTrack.empty()) {
+        stepIndex = markIndex;
+    } else {
+        double position = buffer.GetEffectTimeIntervalPosition() * (advances + 1.0) * 0.99;
+        stepIndex = int(position);
+    }
 
-    x += int(position) * Skips_BandSize;
+    x += stepIndex * Skips_BandSize;
     while (x > max) {
         x -= (Skips_BandSize + Skips_SkipSize) * colorcnt;
     }
