@@ -28,6 +28,8 @@ public:
         return true;
     }
     virtual void RenameTimingTrack(std::string oldname, std::string newname, Effect* effect) override;
+    virtual bool needToAdjustSettings(const std::string& version) override;
+    virtual void adjustSettings(const std::string& version, Effect* effect, bool removeDefaults = true) override;
 
     static int sBarCountDefault;
     static int sBarCountMin;

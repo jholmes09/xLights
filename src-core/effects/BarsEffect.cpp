@@ -147,6 +147,36 @@ void BarsEffect::RenameTimingTrack(std::string oldname, std::string newname, Eff
     EffectTempo::RenameTrack(effect, "Bars", oldname, newname);
 }
 
+// The JHP fork briefly had Use Fixed Speed (cycles/second) before the Timing
+// dropdown replaced it. Those settings no longer have a control, which trips an
+// "Unable to find" assert when the effect is selected, and the file version can't
+// tell such effects apart, so every Bars effect is checked on load.
+bool BarsEffect::needToAdjustSettings(const std::string& version)
+{
+    return true;
+}
+
+void BarsEffect::adjustSettings(const std::string& version, Effect* effect, bool removeDefaults)
+{
+    SettingsMap& settings = effect->GetSettings();
+    if (settings.Contains("E_CHECKBOX_Bars_UseSpeed")) {
+        if (settings.GetBool("E_CHECKBOX_Bars_UseSpeed", false) && !settings.Contains("E_CHOICE_Bars_TempoMode")) {
+            char bpm[32];
+            snprintf(bpm, sizeof(bpm), "%.1f", settings.GetDouble("E_TEXTCTRL_Bars_Speed", 1.0) * 60.0);
+            settings["E_CHOICE_Bars_TempoMode"] = "BPM";
+            settings["E_TEXTCTRL_Bars_BPM"] = bpm;
+        }
+        settings.erase("E_CHECKBOX_Bars_UseSpeed");
+    }
+    settings.erase("E_TEXTCTRL_Bars_Speed");
+    settings.erase("E_SLIDER_Bars_Speed");
+    settings.erase("E_VALUECURVE_Bars_Speed");
+
+    if (RenderableEffect::needToAdjustSettings(version)) {
+        RenderableEffect::adjustSettings(version, effect, removeDefaults);
+    }
+}
+
 void BarsEffect::Render(Effect* effect, const SettingsMap& SettingsMap, RenderBuffer& buffer)
 {
     do {
