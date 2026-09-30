@@ -116,6 +116,7 @@ protected:
         ValueCurveButton* valueCurveBtn = nullptr;
         wxWindow* buddySlider = nullptr;   // IDD_SLIDER for float props
         wxTextCtrl* buddyText = nullptr;   // IDD_TEXTCTRL for int slider props
+        wxWindow* extraRow = nullptr;      // e.g. multiplierButtons; follows the property's show/enable rules
     };
 
     // Subclasses can look up the built control info for a property by id.
