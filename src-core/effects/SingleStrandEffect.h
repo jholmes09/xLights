@@ -66,6 +66,8 @@ public:
     static int sSkipsStartPosDefault;
     static int sSkipsAdvanceDefault;
     static std::string sTimingTrackDefault;
+    static bool sSkipsUseTimingTrackDefault;
+    static std::string sSkipsTimingTrackDefault;
 
 protected:
     virtual void OnMetadataLoaded() override;
@@ -74,7 +76,9 @@ private:
     void RenderSingleStrandChase(RenderBuffer& buffer, Effect* eff,
                                  const SingleStrandRenderCache& cache, int Number_Chases, int chaseSize,
                                  float chaseSpeed, float offset);
-    Effect* GetTimingEvent(RenderBuffer& buffer, const std::string& timingTrack, uint32_t ms);
+    // indexOut, when non-null, receives the 0-based ordinal of the returned mark
+    // among all marks on the track (used to step the Skips pattern once per mark).
+    Effect* GetTimingEvent(RenderBuffer& buffer, const std::string& timingTrack, uint32_t ms, int* indexOut = nullptr);
     void RenderSingleStrandSkips(RenderBuffer& buffer, Effect* eff, const SingleStrandRenderCache& cache);
     void RenderSingleStrandFX(RenderBuffer& buffer, Effect* eff, SingleStrandRenderCache& cache, int intensity, int speed);
     void draw_chase(RenderBuffer& buffer,
