@@ -74,7 +74,7 @@ void MetalBarsEffect::Render(Effect *effect, const SettingsMap &SettingsMap, Ren
 
     float offset = buffer.GetEffectTimeIntervalPosition();
     int paletteRepeat = GetValueCurveInt("Bars_BarCount", sBarCountDefault, SettingsMap, offset, sBarCountMin, sBarCountMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
-    double cycles = GetValueCurveDouble("Bars_Cycles", sCyclesDefault, SettingsMap, offset, sCyclesMin, sCyclesMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS(), sCyclesDivisor);
+    double cycles = GetEffectiveCycles(buffer, SettingsMap, offset);
     double position = buffer.GetEffectTimeIntervalPosition(cycles);
     double center = GetValueCurveDouble("Bars_Center", sCenterDefault, SettingsMap, position, sCenterMin, sCenterMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
 
