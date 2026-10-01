@@ -1847,9 +1847,11 @@ void MainSequencer::InsertTimingMarkFromRange()
     bool is_range = true;
     int x1;
     int x2;
+    int tapMS = -1;
     if (xLightsApp::GetFrame()->GetPlayStatus() == PLAY_TYPE_MODEL) {
         x1 = PanelTimeLine->GetPlayMarker();
         x2 = x1;
+        tapMS = TimeLine::RoundToMultipleOfPeriod(xLightsApp::GetFrame()->GetTimingTapTimeMS(), PanelTimeLine->GetTimeFrequency());
     }
     else {
         x1 = PanelTimeLine->GetSelectedPositionStart();
@@ -1866,8 +1868,8 @@ void MainSequencer::InsertTimingMarkFromRange()
 
     int selectedTiming = mSequenceElements->GetSelectedTimingRow();
     if (selectedTiming >= 0) {
-        int t1 = PanelTimeLine->GetAbsoluteTimeMSfromPosition(x1);
-        int t2 = PanelTimeLine->GetAbsoluteTimeMSfromPosition(x2);
+        int t1 = tapMS >= 0 ? tapMS : PanelTimeLine->GetAbsoluteTimeMSfromPosition(x1);
+        int t2 = tapMS >= 0 ? tapMS : PanelTimeLine->GetAbsoluteTimeMSfromPosition(x2);
         if (t2 > PanelTimeLine->GetTimeLength()) {
             t2 = PanelTimeLine->GetTimeLength();
         }
@@ -1951,10 +1953,12 @@ void MainSequencer::SplitTimingMark()
 
     int x1;
     int x2;
+    int tapMS = -1;
     if (xLightsApp::GetFrame()->GetPlayStatus() == PLAY_TYPE_MODEL)
     {
         x1 = PanelTimeLine->GetPlayMarker();
         x2 = x1;
+        tapMS = TimeLine::RoundToMultipleOfPeriod(xLightsApp::GetFrame()->GetTimingTapTimeMS(), PanelTimeLine->GetTimeFrequency());
     }
     else
     {
@@ -1981,8 +1985,8 @@ void MainSequencer::SplitTimingMark()
         }
 
         int index1, index2;
-        int t1 = PanelTimeLine->GetAbsoluteTimeMSfromPosition(x1);
-        int t2 = PanelTimeLine->GetAbsoluteTimeMSfromPosition(x2);
+        int t1 = tapMS >= 0 ? tapMS : PanelTimeLine->GetAbsoluteTimeMSfromPosition(x1);
+        int t2 = tapMS >= 0 ? tapMS : PanelTimeLine->GetAbsoluteTimeMSfromPosition(x2);
         if (el->HitTestEffectByTime(t1, index1) && el->HitTestEffectByTime(t2, index2))
         {
             if (index1 == index2)

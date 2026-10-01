@@ -1097,6 +1097,7 @@ public:
     bool _snapToTimingMarks = true;
     bool _autoSavePerspecive = true;
     bool _renderBellEnabled = false;
+    int _timingTapOffsetMS = 0;
     bool _pasteAsLayers = false;
     bool _ignoreVendorModelRecommendations = false;
     bool _purgeDownloadCacheOnStart = false;
@@ -1125,6 +1126,9 @@ public:
 
     [[nodiscard]] bool IsRenderBell() const { return _renderBellEnabled; }
     void SetRenderBell(bool b) { _renderBellEnabled = b; }
+    [[nodiscard]] int TimingTapOffsetMS() const { return _timingTapOffsetMS; }
+    void SetTimingTapOffsetMS(int ms) { _timingTapOffsetMS = ms; }
+    int GetTimingTapTimeMS();
     [[nodiscard]] bool IsPasteAsLayers() const { return _pasteAsLayers; }
     void SetPasteAsLayers(bool b) { _pasteAsLayers = b; }
 	[[nodiscard]] bool IsIgnoreVendorModelRecommendations() const { return _ignoreVendorModelRecommendations; }

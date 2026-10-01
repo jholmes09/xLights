@@ -1601,6 +1601,7 @@ xLightsFrame::xLightsFrame(wxWindow* parent, int ab, wxWindowID id, bool renderO
     spdlog::debug("Small Waveform: {}.", toStr(_smallWaveform));
 
     config->Read("xLightsRenderBell", &_renderBellEnabled, false);
+    config->Read("xLightsTimingTapOffsetMS", &_timingTapOffsetMS, 0);
     spdlog::debug("Render Bell Enabled: {}.", toStr(_renderBellEnabled));
 
     config->Read("xLightsPasteAsLayers", &_pasteAsLayers, false);
@@ -2284,6 +2285,7 @@ xLightsFrame::~xLightsFrame()
     config->Write("xLightsHidePresetPreview", _hidePresetPreview);
     config->Write("xLightsSmallWaveform", _smallWaveform);
     config->Write("xLightsRenderBell", _renderBellEnabled);
+    config->Write("xLightsTimingTapOffsetMS", _timingTapOffsetMS);
     config->Write("xLightsPasteAsLayers", _pasteAsLayers);
     config->Write("xLightsModelBlendDefaultOff", _modelBlendDefaultOff);
     config->Write("xLightsLowDefinitionRender", _lowDefinitionRender);
