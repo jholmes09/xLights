@@ -9,6 +9,7 @@
  **************************************************************/
 
 #include <atomic>
+#include <cmath>
 #include <filesystem>
 #include <map>
 #include <set>
@@ -2159,6 +2160,27 @@ void xLightsFrame::SequenceLastFrame(wxCommandEvent& event)
     mainSequencer->PanelWaveForm->UpdatePlayMarker();
     mainSequencer->PanelEffectGrid->ForceRefresh();
     mainSequencer->UpdateTimeDisplay(end_ms, _fps);
+}
+
+// Song time for a timing mark tapped during playback. Reads the audio clock at the
+// moment of the key press instead of the on-screen play marker, which is quantised to
+// a pixel at the current zoom and only moves when the grid repaints. The clock reports
+// audio handed to the output device, so the calibrated tap offset (output latency plus
+// the tapper's own habit, in wall-clock ms) is taken off, scaled to song time.
+int xLightsFrame::GetTimingTapTimeMS()
+{
+    int t;
+    AudioManager* playAudio = GetPlaybackAudio();
+    if (CurrentSeqXmlFile != nullptr && CurrentSeqXmlFile->GetSequenceType() == "Media" && playAudio != nullptr) {
+        t = playAudio->Tell();
+    } else {
+        wxTimeSpan ts = wxDateTime::UNow() - starttime;
+        long curtime = ts.GetMilliseconds().ToLong();
+        int msec = playAnimation ? (int)(curtime * playSpeed) : (int)curtime;
+        t = playStartTime + msec - playStartMS;
+    }
+    t -= (int)std::lround(_timingTapOffsetMS * playSpeed);
+    return t < 0 ? 0 : t;
 }
 
 void xLightsFrame::SequenceRewind10(wxCommandEvent& event)

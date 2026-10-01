@@ -13,6 +13,7 @@
 //(*Headers(EffectsGridSettingsPanel)
 #include <wx/panel.h>
 class wxCheckBox;
+class wxSpinCtrl;
 class wxChoice;
 class wxFlexGridSizer;
 class wxStaticText;
@@ -67,6 +68,7 @@ class EffectsGridSettingsPanel: public wxPanel
 
 	private:
         xLightsFrame *frame;
+        wxSpinCtrl* TimingTapOffsetSpin = nullptr;  // added outside the wxSmith block
 
 
 		//(*Handlers(EffectsGridSettingsPanel)

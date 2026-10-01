@@ -13,6 +13,7 @@
 //(*InternalHeaders(EffectsGridSettingsPanel)
 #include <wx/checkbox.h>
 #include <wx/choice.h>
+#include <wx/spinctrl.h>
 #include <wx/intl.h>
 #include <wx/sizer.h>
 #include <wx/stattext.h>
@@ -143,6 +144,22 @@ EffectsGridSettingsPanel::EffectsGridSettingsPanel(wxWindow* parent, xLightsFram
 	Connect(ID_CHECKBOX9, wxEVT_COMMAND_CHECKBOX_CLICKED, (wxObjectEventFunction)&EffectsGridSettingsPanel::OnBellOnRenderCompletionClick);
 	Connect(ID_CHOICE_PASTE_AS, wxEVT_COMMAND_CHOICE_SELECTED, (wxObjectEventFunction)&EffectsGridSettingsPanel::OnPasteAsChoiceSelect);
 	//*)
+
+    // Kept outside the wxSmith block so regenerating the form doesn't drop it.
+    auto* tapLabel = new wxStaticText(this, wxID_ANY, _("Timing tap offset (ms)"));
+    tapLabel->SetToolTip(_("Taken off timing marks added while the song plays, to cancel speaker latency and your own tap habit. Positive moves marks earlier."));
+    TimingTapOffsetSpin = new wxSpinCtrl(this, wxID_ANY, "0", wxDefaultPosition, wxDefaultSize, wxSP_ARROW_KEYS, -500, 500, 0);
+    TimingTapOffsetSpin->SetToolTip(tapLabel->GetToolTipText());
+    TimingTapOffsetSpin->Bind(wxEVT_SPINCTRL, [this](wxSpinEvent&) {
+        if (wxPreferencesEditor::ShouldApplyChangesImmediately()) {
+            TransferDataFromWindow();
+        }
+    });
+    GridSizer1->Add(tapLabel, 1, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 5);
+    GridSizer1->Add(TimingTapOffsetSpin, 1, wxALL | wxALIGN_CENTER_HORIZONTAL | wxALIGN_CENTER_VERTICAL, 5);
+    GridSizer1->Add(-1, -1, 1, wxALL | wxALIGN_CENTER_HORIZONTAL | wxALIGN_CENTER_VERTICAL, 5);
+    GridSizer1->Fit(this);
+    GridSizer1->SetSizeHints(this);
 }
 
 EffectsGridSettingsPanel::~EffectsGridSettingsPanel()
@@ -164,6 +181,7 @@ bool EffectsGridSettingsPanel::TransferDataToWindow() {
     ShowAlternateTimingFormatCheckBox->SetValue(frame->ShowAlternateTimingFormat());
     BellOnRenderCompletion->SetValue(frame->IsRenderBell());
     PasteAsChoice->SetSelection(frame->IsPasteAsLayers() ? 1 : 0);
+    TimingTapOffsetSpin->SetValue(frame->TimingTapOffsetMS());
     int gs = frame->GridSpacing();
     switch (gs) {
         case 48:
@@ -215,6 +233,7 @@ bool EffectsGridSettingsPanel::TransferDataFromWindow() {
     frame->SetShowGroupEffectIndicator(GroupEffectIndicator->IsChecked());
     frame->SetShowAlternateTimingFormat(ShowAlternateTimingFormatCheckBox->IsChecked());
     frame->SetRenderBell(BellOnRenderCompletion->IsChecked());
+    frame->SetTimingTapOffsetMS(TimingTapOffsetSpin->GetValue());
     frame->SetPasteAsLayers(PasteAsChoice->GetSelection() == 1);
     return true;
 }
