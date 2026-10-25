@@ -1,0 +1,10 @@
+{
+  "name": "Example two-channel flame bar",
+  "channels": ["Flame", "Angle"],
+  "fire":  { "channel": 1, "on": 255, "off": 0, "threshold": 200, "rearmBelow": 20 },
+  "angle": { "channel": 2, "minDeg": -45, "maxDeg": 45, "centerValue": 128,
+             "positions": [ {"n": 1, "deg": -45, "value": 0}, {"n": 2, "deg": 0, "value": 128}, {"n": 3, "deg": 45, "value": 255} ],
+             "travelMs": [0, 120, 200] },
+  "idle": { "2": 128 },
+  "shotPresetsMs": [200, 400, 800]
+}

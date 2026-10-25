@@ -493,6 +493,10 @@ public:
                                       bool highlightFirst = false, int highlightpixel = 0,
                                       float *boundingBox = nullptr);
     virtual void DisplayEffectOnWindow(IModelPreview* preview, double pointSize);
+    // Called around preview draws with the rendered show and the frame being
+    // shown, for models whose picture depends on earlier frames. Cleared to
+    // (nullptr, -1) after the draw.
+    virtual void SetPreviewFrameContext(const class SequenceData* data, int frame) {}
 
 
 

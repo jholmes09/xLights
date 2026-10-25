@@ -1384,7 +1384,7 @@ void JsonEffectPanel::BuildPropertyRow(wxWindow* parentWin, wxSizer* sizer, cons
         wxWindowID ctrlId = wxNewId();
         auto* spin = new BulkEditSpinCtrl(parentWin, ctrlId, wxString::Format("%d", defaultVal),
                                            wxDefaultPosition, wxDLG_UNIT(parentWin, wxSize(45, -1)),
-                                           wxSP_ARROW_KEYS, minVal, maxVal, defaultVal, wxString(ctrlName));
+                                           wxSP_ARROW_KEYS | wxTE_PROCESS_ENTER, minVal, maxVal, defaultVal, wxString(ctrlName));
         info.spinCtrl = spin;
         sizer->Add(spin, 1, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 2);
 

@@ -291,11 +291,17 @@ static std::unique_ptr<xlImage> LoadBackgroundImageFile(const std::string& path,
                                         const std::pair<Model*, float>& b) {
                                          return a.second < b.second;
                                      });
+                    // Hand each model the rendered show + frame so models
+                    // that look back through earlier frames (DMX Flame
+                    // presets) draw exactly, same as the live preview.
+                    const SequenceData* frameSeq = &ctx->GetSequenceData();
                     for (const auto& mz : keyed) {
+                        mz.first->SetPreviewFrameContext(frameSeq, dataFrame);
                         mz.first->DisplayModelOnWindow(&preview, gctx, solid, transp, is3dCpp,
                                                        /*color*/ nullptr, /*allowSelected*/ false,
                                                        /*wiring*/ false, /*highlightFirst*/ false,
                                                        0, nullptr);
+                        mz.first->SetPreviewFrameContext(nullptr, -1);
                     }
 
                     // View objects (house meshes, ground images, terrain).

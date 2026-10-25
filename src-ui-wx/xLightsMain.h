@@ -1533,6 +1533,9 @@ public:
     void LoadPresetEffects(const CopyFormat1& pd);
     Model* GetPresetModel() { EnsurePresetModel(); return _presetModel; }
     SequenceData& GetPresetSequenceData() { return _presetSequenceData; }
+    // Used by effect panels that size their own effect (e.g. Flame presets).
+    bool SetSelectedEffectTimes(const std::string& effectType, int startMS, int endMS, std::string& note);
+    Effect* GetSelectedEffectForPanel() const;
     SequenceElements& GetPresetSequenceElements() { return _presetSequenceElements; }
 
 private:

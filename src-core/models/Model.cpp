@@ -4914,7 +4914,7 @@ std::string Model::DetermineClass(const std::string& displayAs, bool isSingingFa
         return "Floodlight";
     }
 
-    if (displayAs == "DmxGeneral" || displayAs == "DmxServo" || displayAs == "DmxSkull") {
+    if (displayAs == "DmxGeneral" || displayAs == "DmxFlame" || displayAs == "DmxServo" || displayAs == "DmxSkull") {
         return "DMX Special Purpose";
     }
 

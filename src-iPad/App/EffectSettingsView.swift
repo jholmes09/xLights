@@ -730,6 +730,13 @@ struct EffectMetadataPanel: View {
         // surfaced on iPad. Mirrors the desktop gate in
         // `JsonEffectPanel::BuildPropertyRow` for `"platform": "ipad"`.
         if !prop.isForIPad { return false }
+        // Flame: fixture-specific hiding on top of the JSON rules
+        // (desktop FlamePanel::ValidateWindow — no angle motor / no
+        // presets on the row's DMX Flame model).
+        if metadata.effectName == "Flame",
+           !FlamePanelGate.isVisible(prop.id, viewModel: viewModel) {
+            return false
+        }
         guard let rules = metadata.visibilityRules else { return true }
         for rule in rules {
             let hides = rule.hide?.contains(prop.id) ?? false

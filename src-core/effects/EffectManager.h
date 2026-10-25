@@ -37,6 +37,7 @@ public:
         eff_FILL,
         eff_FIRE,
         eff_FIREWORKS,
+        eff_FLAME,
         eff_GALAXY,
         eff_GARLANDS,
         eff_GLEDIATOR,

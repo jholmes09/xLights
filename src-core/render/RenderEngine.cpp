@@ -54,6 +54,7 @@
 #include "UtilClasses.h"
 #include "JobPool.h"
 #include "models/DMX/DmxMovingHeadAdv.h"
+#include "models/DMX/DmxFlame.h"
 
 #include <log.h>
 // END_OF_RENDER_FRAME is defined in RenderProgressInfo.h
@@ -1641,6 +1642,15 @@ public:
                     }
                 }
                 fprintf(stderr, "SUM O f=%d m=%s s=%d pfd=%d h=%016llx\n", frame, el->GetFullName().c_str(), strand, (int)GetPreviousFrameDone(), (unsigned long long)h);
+            }
+
+            // A flame unit with nothing on it sits at its safe idle values
+            // (e.g. Showven nozzle straight up), not at all-zero.
+            if (strand == -1 && info.submodel == -1) {
+                const Model* model = buffer->GetModel();
+                if (model != nullptr && model->GetDisplayAs() == DisplayAsType::DmxFlame && !AnyEffectAtFrame(el, frame)) {
+                    static_cast<const DmxFlame*>(model)->WriteIdleValues(&((*seqData)[frame][0]), seqData->NumChannels());
+                }
             }
 
             // Position Zone processing (DMX)
@@ -3481,6 +3491,21 @@ private:
         return res;
     }
 
+    bool AnyEffectAtFrame(Element* el, int frame) {
+        for (size_t l = 0; l < el->GetEffectLayerCount(); ++l) {
+            EffectLayer* layer = el->GetEffectLayer(l);
+            if (layer == nullptr) {
+                continue;
+            }
+            std::unique_lock<std::recursive_mutex> lock(layer->GetLock());
+            int idx = 0;
+            if (findEffectForFrame(layer, frame, idx) != nullptr) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     Effect *findEffectForFrame(EffectLayer* layer, int frame, int &lastIdx) {
         if (layer == nullptr) {
             return nullptr;
@@ -4258,6 +4283,16 @@ void RenderEngine::PerformRenderSetup(RenderSetupRequest& req) {
         for (int f = startFrame; f <= endFrame; f++) {
             for (const auto& it : ranges) {
                 seqData[f].Zero(it.start, it.end - it.start + 1);
+            }
+        }
+        // Frames no effect touches keep these; flame units idle at their safe
+        // values (e.g. Showven nozzle straight up), not at all-zero.
+        for (const auto* m : restrictToModels.empty() ? models : restrictToModels) {
+            if (m != nullptr && m->GetDisplayAs() == DisplayAsType::DmxFlame) {
+                const auto* flame = static_cast<const DmxFlame*>(m);
+                for (int f = startFrame; f <= endFrame; f++) {
+                    flame->WriteIdleValues(&seqData[f][0], seqData.NumChannels());
+                }
             }
         }
     }

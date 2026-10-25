@@ -1,0 +1,173 @@
+{
+    "effectName": "Flame",
+    "properties": [
+        {
+            "id": "Flame_Action",
+            "label": "Fire",
+            "type": "enum",
+            "controlType": "choice",
+            "options": ["Preset", "Shot", "Sweep"],
+            "default": "Preset",
+            "description": "Preset fires one of the unit's built-in sequences. Shot fires a static flame at one angle for a set length. Sweep moves from a start angle to an end angle while firing."
+        },
+        {
+            "id": "Flame_PresetPicker",
+            "label": "Preset",
+            "type": "string",
+            "controlType": "custom",
+            "default": "",
+            "description": "The flame unit's presets by name, with each one's real length. Picking one sets Preset #."
+        },
+        {
+            "id": "Flame_Preset",
+            "label": "Preset #",
+            "type": "int",
+            "controlType": "spin",
+            "default": 8,
+            "min": 1,
+            "max": 255,
+            "description": "Number of the built-in preset to fire, as listed in the unit's manual."
+        },
+        {
+            "id": "Flame_FanButtons",
+            "label": "Angle",
+            "type": "string",
+            "controlType": "custom",
+            "default": "",
+            "description": "One button per named angle position, laid out as the fan. Click to set the angle (switches a Preset effect to Shot). Shift-click adds the position to the angle pattern."
+        },
+        {
+            "id": "Flame_Angle",
+            "label": "Angle °",
+            "type": "int",
+            "controlType": "slider",
+            "default": 0,
+            "min": -105,
+            "max": 105,
+            "valueCurve": true,
+            "description": "Nozzle angle in degrees, 0 = straight up. For Sweep this is the start angle."
+        },
+        {
+            "id": "Flame_EndAngle",
+            "label": "End Angle °",
+            "type": "int",
+            "controlType": "slider",
+            "default": 0,
+            "min": -105,
+            "max": 105,
+            "description": "Where a Sweep ends. Back-to-back sweeps go back and forth between the two angles."
+        },
+        {
+            "id": "Flame_ShotMs",
+            "label": "Shot Length ms",
+            "type": "int",
+            "controlType": "spin",
+            "default": 500,
+            "min": 10,
+            "max": 10000,
+            "description": "How long the flame runs. For a single shot this also sets the effect's length (and dragging the effect updates it); for repeated shots it is each shot's length."
+        },
+        {
+            "id": "Flame_ShotButtons",
+            "label": "",
+            "type": "string",
+            "controlType": "custom",
+            "default": "",
+            "description": "Quick shot-length buttons."
+        },
+        {
+            "id": "Flame_Repeat",
+            "label": "Repeat",
+            "type": "enum",
+            "controlType": "choice",
+            "options": ["Once", "Back-to-back", "On timing marks"],
+            "default": "Once",
+            "separator": true,
+            "description": "Once fires a single shot. Back-to-back fires again as soon as each shot ends, for as long as the effect lasts. On timing marks fires at every mark of a timing track inside the effect; a shot still burning when the next mark comes is cut short."
+        },
+        {
+            "id": "Flame_TimingTrack",
+            "label": "Timing Track",
+            "type": "enum",
+            "controlType": "choice",
+            "options": [],
+            "default": "",
+            "dynamicOptions": "timingTracks",
+            "expandToFill": true,
+            "description": "The timing track whose marks trigger each shot."
+        },
+        {
+            "id": "Flame_Pattern",
+            "label": "Angle Pattern",
+            "type": "string",
+            "controlType": "text",
+            "default": "",
+            "description": "Angle positions to step through, one per shot, e.g. 1,8,15,8. Loops. Empty uses the single angle."
+        },
+        {
+            "id": "Flame_GapMs",
+            "label": "Extra Gap ms",
+            "type": "int",
+            "controlType": "spin",
+            "default": 0,
+            "min": 0,
+            "max": 10000,
+            "description": "Extra wait between back-to-back shots. Fire always drops for at least one frame so the unit can fire again."
+        },
+        {
+            "id": "Flame_MoveEarly",
+            "label": "Move early",
+            "type": "bool",
+            "controlType": "checkbox",
+            "default": false,
+            "separator": true,
+            "description": "Send the angle ahead of the fire command by the nozzle's travel time (from the manual), so the flame lands on time. The effect starts earlier to make room; the move shows as a hatched band on the timeline."
+        },
+        {
+            "id": "Flame_FitLength",
+            "label": "Fit length to preset",
+            "type": "bool",
+            "controlType": "checkbox",
+            "default": true,
+            "description": "Size the effect on the timeline to the preset's real length. Resizing the effect by hand turns this off."
+        },
+        {
+            "id": "Flame_Info",
+            "label": "",
+            "type": "string",
+            "controlType": "custom",
+            "default": "",
+            "description": "What the effect will do and how long it lasts."
+        }
+    ],
+    "visibilityRules": [
+        {
+            "when": { "property": "Flame_Action", "equals": "Preset" },
+            "enable": ["Flame_Preset"]
+        },
+        {
+            "when": { "property": "Flame_Action", "notEquals": "Preset" },
+            "show": ["Flame_Angle"]
+        },
+        {
+            "when": { "property": "Flame_Action", "equals": "Sweep" },
+            "show": ["Flame_EndAngle"]
+        },
+        {
+            "when": { "property": "Flame_Repeat", "equals": "On timing marks" },
+            "show": ["Flame_TimingTrack"]
+        },
+        {
+            "when": { "property": "Flame_Repeat", "notEquals": "Once" },
+            "show": ["Flame_Pattern"]
+        },
+        {
+            "when": { "property": "Flame_Repeat", "equals": "Back-to-back" },
+            "show": ["Flame_GapMs"]
+        },
+        {
+            "when": { "property": "Flame_Repeat", "equals": "Once" },
+            "enable": ["Flame_FitLength"]
+        }
+    ]
+}

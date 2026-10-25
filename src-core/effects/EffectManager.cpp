@@ -34,6 +34,7 @@
 #include "FanEffect.h"
 #include "FillEffect.h"
 #include "FireEffect.h"
+#include "FlameEffect.h"
 #include "FireworksEffect.h"
 #include "GalaxyEffect.h"
 #include "GarlandsEffect.h"
@@ -116,6 +117,7 @@ EffectManager::EffectManager(std::string metadataDir)
     add(createEffect(eff_FILL));
     add(createEffect(eff_FIRE));
     add(createEffect(eff_FIREWORKS));
+    add(createEffect(eff_FLAME));
     add(createEffect(eff_GALAXY));
     add(createEffect(eff_GARLANDS));
     add(createEffect(eff_GLEDIATOR));
@@ -197,6 +199,7 @@ RenderableEffect *EffectManager::createEffect(RGB_EFFECTS_e eff) {
         case eff_FILL: return new FillEffect(eff_FILL);
         case eff_FIRE: return new FireEffect(eff_FIRE);
         case eff_FIREWORKS: return new FireworksEffect(eff_FIREWORKS);
+        case eff_FLAME: return new FlameEffect(eff_FLAME);
         case eff_GALAXY: return new GalaxyEffect(eff_GALAXY);
         case eff_GARLANDS: return new GarlandsEffect(eff_GARLANDS);
         case eff_GLEDIATOR: return new GlediatorEffect(eff_GLEDIATOR);

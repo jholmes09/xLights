@@ -26,6 +26,7 @@ std::string DisplayAsTypeToString(DisplayAsType type) {
         case DisplayAsType::DmxFloodArea:     return XmlNodeKeys::DmxFloodAreaType;
         case DisplayAsType::DmxFloodlight:    return XmlNodeKeys::DmxFloodlightType;
         case DisplayAsType::DmxGeneral:       return XmlNodeKeys::DmxGeneralType;
+        case DisplayAsType::DmxFlame:         return XmlNodeKeys::DmxFlameType;
         case DisplayAsType::DmxServo:         return XmlNodeKeys::DmxServoType;
         case DisplayAsType::DmxServo3d:       return XmlNodeKeys::DmxServo3dType;
         case DisplayAsType::DmxSkull:         return XmlNodeKeys::DmxSkullType;
@@ -70,6 +71,7 @@ DisplayAsType DisplayAsTypeFromString(const std::string& str) {
         {XmlNodeKeys::DmxFloodAreaType,     DisplayAsType::DmxFloodArea},
         {XmlNodeKeys::DmxFloodlightType,    DisplayAsType::DmxFloodlight},
         {XmlNodeKeys::DmxGeneralType,       DisplayAsType::DmxGeneral},
+        {XmlNodeKeys::DmxFlameType,         DisplayAsType::DmxFlame},
         {XmlNodeKeys::DmxServoType,         DisplayAsType::DmxServo},
         {XmlNodeKeys::DmxServo3dType,       DisplayAsType::DmxServo3d},
         {XmlNodeKeys::DmxSkullType,         DisplayAsType::DmxSkull},
@@ -122,6 +124,7 @@ bool IsDmxDisplayType(DisplayAsType type) {
         case DisplayAsType::DmxFloodArea:
         case DisplayAsType::DmxFloodlight:
         case DisplayAsType::DmxGeneral:
+        case DisplayAsType::DmxFlame:
         case DisplayAsType::DmxServo:
         case DisplayAsType::DmxServo3d:
         case DisplayAsType::DmxSkull:

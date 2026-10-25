@@ -44,6 +44,7 @@
 #include "effects/PicturesEffect.h"
 #include "effects/GlediatorEffect.h"
 #include "effects/MovingHeadEffect.h"
+#include "effects/FlameEffect.h"
 #include "graphics/xlGraphicsAccumulators.h"
 #include "media/AudioManager.h"
 #include "media/NoteImporter.h"
@@ -150,6 +151,8 @@
 #include "models/DMX/DmxSkull.h"
 #include "models/DMX/DmxServo.h"
 #include "models/DMX/DmxServo3D.h"
+#include "models/DMX/DmxFlame.h"
+#include "models/DMX/FlameFixture.h"
 #include "models/DMX/Servo.h"
 #include "models/DMX/DmxImage.h"
 #include "models/DMX/Mesh.h"
@@ -5662,6 +5665,7 @@ static void SetElementMasterVisible(SequenceElements& se, Element* elem, bool vi
         // in CreateDefaultModel and creates a single-point boxed model that
         // the existing tap-to-place flow commits immediately (none use a
         // poly-point location).
+        @"DmxFlame",
         @"DmxFloodArea",
         @"DmxFloodlight",
         @"DmxGeneral",
@@ -9463,6 +9467,69 @@ static void BuildDmxGeneralProps(DmxGeneral* g, NSMutableArray* out) {
     }
 }
 
+// DMX Flame — mirrors DmxFlamePropertyAdapter::AddTypeProperties.
+// Fixture picks the built-in definition (or a Custom JSON file) and
+// with it the channel count; angle limits / flip only show for
+// fixtures with a motorised nozzle.
+static const char* const kFlameFixtureIds[] = {
+    FlameFixtures::GFlameId, FlameFixtures::ShowvenId, FlameFixtures::CustomId
+};
+
+static int FlameFixtureIndex(const std::string& id) {
+    for (int i = 0; i < 3; ++i) {
+        if (id == kFlameFixtureIds[i]) return i;
+    }
+    return 1;
+}
+
+static void BuildDmxFlameProps(DmxFlame* fl, NSMutableArray* out) {
+    const FlameFixture& fx = fl->GetFixture();
+    [out addObject:MakeEnumProp(@"FlameFixture", @"Fixture",
+                                 FlameFixtureIndex(fl->GetFixtureId()),
+                                 @[ @"Galaxis G-Flame", @"Showven Circle Flamer",
+                                    @"Custom (JSON file)" ])];
+    if (fl->GetFixtureId() == FlameFixtures::CustomId) {
+        [out addObject:@{
+            @"key":   @"FlameCustomFile",
+            @"label": @"Definition File",
+            @"kind":  @"jsonFile",
+            @"value": [NSString stringWithUTF8String:fl->GetCustomFile().c_str()],
+        }];
+        if (!fl->GetCustomError().empty()) {
+            NSMutableDictionary* e = MakeStringProp(@"FlameCustomError", @"Load Error",
+                [NSString stringWithUTF8String:fl->GetCustomError().c_str()]);
+            e[@"enabled"] = @NO;
+            [out addObject:e];
+        }
+    }
+
+    std::string chans;
+    for (size_t i = 0; i < fx.channels.size(); ++i) {
+        if (i) chans += ", ";
+        chans += std::to_string(i + 1) + " " + fx.channels[i];
+    }
+    if (fl->GetFixtureId() == FlameFixtures::ShowvenId) {
+        chans += "  (CH6 pump arm is not driven)";
+    } else if (fl->GetFixtureId() == FlameFixtures::GFlameId) {
+        chans += "  (safety channel is not driven)";
+    }
+    NSMutableDictionary* c = MakeStringProp(@"FlameChannels", @"Channels",
+                                            [NSString stringWithUTF8String:chans.c_str()]);
+    c[@"enabled"] = @NO;
+    [out addObject:c];
+
+    if (fx.HasAngle() && fx.PositionCount() > 1) {
+        [out addObject:MakeIntProp(@"FlameMinPos", @"Leftmost Position",
+                                    fl->GetMinPosition(), 1, fx.PositionCount())];
+        [out addObject:MakeIntProp(@"FlameMaxPos", @"Rightmost Position",
+                                    fl->GetMaxPosition(), 1, fx.PositionCount())];
+        [out addObject:MakeBoolProp(@"FlameFlip", @"Flip Left/Right",
+                                     fl->GetFlip() ? YES : NO)];
+    }
+    [out addObject:MakeIntProp(@"FlameSize", @"Flame Size %",
+                                fl->GetFlameSize(), 10, 400)];
+}
+
 static void BuildDmxMovingHeadProps(DmxMovingHead* mh, NSMutableArray* out) {
     [out addObject:MakeEnumProp(@"DmxStyle", @"DMX Style",
                                  mh->GetDmxStyleVal(),
@@ -9652,6 +9719,9 @@ static void BuildCustomProps(CustomModel* cm, NSMutableArray* out) {
     case DisplayAsType::DmxServo3d:
         BuildDmxServo3dProps(static_cast<DmxServo3d*>(m), out);
         break;
+    case DisplayAsType::DmxFlame:
+        BuildDmxFlameProps(static_cast<DmxFlame*>(m), out);
+        break;
     default:
         break;
     }
@@ -9685,6 +9755,7 @@ static void BuildCustomProps(CustomModel* cm, NSMutableArray* out) {
 
     BOOL ok = NO;
     BOOL changed = NO;
+    BOOL flameChannelsChanged = NO;
     std::string k = key.UTF8String;
 
     // Matrix family (Matrix / Tree / Sphere) all share these keys
@@ -10737,6 +10808,47 @@ static void BuildCustomProps(CustomModel* cm, NSMutableArray* out) {
             changed = YES;
         }
     }
+    // DMX Flame — mirrors DmxFlamePropertyAdapter::OnPropertyGridChange.
+    // Fixture / definition-file changes alter the channel count, so
+    // they go through UpdateChannelCount (start channels re-flow).
+    else if (k == "FlameFixture" || k == "FlameCustomFile"
+             || k == "FlameMinPos" || k == "FlameMaxPos"
+             || k == "FlameFlip" || k == "FlameSize") {
+        auto* fl = dynamic_cast<DmxFlame*>(m);
+        if (!fl) return NO;
+        if (k == "FlameFixture") {
+            int v = asInt(&ok); if (!ok) return NO;
+            v = std::clamp(v, 0, 2);
+            if (fl->GetFixtureId() != kFlameFixtureIds[v]) {
+                fl->SetFixtureId(kFlameFixtureIds[v]);
+                fl->UpdateChannelCount(fl->GetFixture().ChannelCount(), true);
+                flameChannelsChanged = YES;
+                changed = YES;
+            }
+        } else if (k == "FlameCustomFile") {
+            std::string v = asString(&ok); if (!ok) return NO;
+            if (fl->GetCustomFile() != v) {
+                fl->SetCustomFile(v);
+                fl->UpdateChannelCount(fl->GetFixture().ChannelCount(), true);
+                flameChannelsChanged = YES;
+                changed = YES;
+            }
+        } else if (k == "FlameMinPos" || k == "FlameMaxPos") {
+            int v = asInt(&ok); if (!ok) return NO;
+            if (k == "FlameMinPos" && fl->GetMinPosition() != v) {
+                fl->SetMinPosition(v); changed = YES;
+            } else if (k == "FlameMaxPos" && fl->GetMaxPosition() != v) {
+                fl->SetMaxPosition(v); changed = YES;
+            }
+        } else if (k == "FlameFlip") {
+            BOOL v = asBool(&ok); if (!ok) return NO;
+            if (fl->GetFlip() != (bool)v) { fl->SetFlip(v); changed = YES; }
+        } else {
+            int v = asInt(&ok); if (!ok) return NO;
+            v = std::clamp(v, 10, 400);
+            if (fl->GetFlameSize() != v) { fl->SetFlameSize(v); changed = YES; }
+        }
+    }
     // J-3 (DMX) — DmxServo / DmxServo3d top-level knobs. Per-
     // servo settings come through the `Servo<N>Xxx` decoder
     // further down.
@@ -10945,6 +11057,9 @@ static void BuildCustomProps(CustomModel* cm, NSMutableArray* out) {
         m->IncrementChangeCount();
         m->Reinitialize();
         _context->MarkLayoutModelDirty(modelName.UTF8String);
+        if (flameChannelsChanged) {
+            [self recalcModelStartChannels];
+        }
     }
     return changed;
 }
@@ -15353,6 +15468,149 @@ int cleanupExternalMedia(iPadRenderContext& ctx, bool execute,
     ObtainAccessToURL(resolved, false);
     long ms = VideoReader::GetVideoLength(resolved);
     return (ms > 0) ? ms : 0;
+}
+
+#pragma mark - Flame effect (DMX Flame model)
+
+- (NSDictionary*)flameFixtureInfoForModel:(NSString*)modelName {
+    if (!_context || !_context->HasModelManager() || modelName.length == 0) return @{};
+    const DmxFlame* fl = FlameEffect::FlameModelFor(_context->GetModelManager()[modelName.UTF8String]);
+    if (!fl) return @{};
+    const FlameFixture& fx = fl->GetFixture();
+
+    NSMutableArray* presets = [NSMutableArray arrayWithCapacity:fx.presets.size()];
+    for (const auto& pr : fx.presets) {
+        [presets addObject:@{
+            @"n": @(pr.n),
+            @"name": [NSString stringWithUTF8String:pr.name.c_str()],
+            @"group": [NSString stringWithUTF8String:pr.group.c_str()],
+            @"lengthMs": @(pr.lengthMs),
+            @"isStatic": @(pr.path == FlamePathType::Static),
+            @"position": @(pr.positions.empty() ? 0 : pr.positions.front()),
+            @"longFlame": @(pr.longFlame),
+        }];
+    }
+    NSMutableArray* positions = [NSMutableArray arrayWithCapacity:fx.positions.size()];
+    for (const auto& pos : fx.positions) {
+        [positions addObject:@{
+            @"n": @(pos.n),
+            @"deg": @(pos.deg),
+            @"allowed": @(fl->IsPositionAllowed(pos.n)),
+        }];
+    }
+    NSMutableArray* shots = [NSMutableArray arrayWithCapacity:fx.shotPresetsMs.size()];
+    for (int ms : fx.shotPresetsMs) [shots addObject:@(ms)];
+
+    return @{
+        @"id": [NSString stringWithUTF8String:fx.id.c_str()],
+        @"name": [NSString stringWithUTF8String:fx.name.c_str()],
+        @"hasAngle": @(fx.HasAngle()),
+        @"hasPresets": @(fx.HasPresets()),
+        @"flip": @(fl->GetFlip()),
+        @"minAllowedDeg": @(fl->MinAllowedDeg()),
+        @"maxAllowedDeg": @(fl->MaxAllowedDeg()),
+        @"presets": presets,
+        @"positions": positions,
+        @"shotPresetsMs": shots,
+    };
+}
+
+- (int)flameCapabilitiesForModel:(NSString*)modelName {
+    if (!_context || !_context->HasModelManager() || modelName.length == 0) return 0;
+    const DmxFlame* fl = FlameEffect::FlameModelFor(_context->GetModelManager()[modelName.UTF8String]);
+    if (!fl) return 0;
+    const FlameFixture& fx = fl->GetFixture();
+    return 1 | (fx.HasAngle() ? 2 : 0) | (fx.HasPresets() ? 4 : 0);
+}
+
+// Mirrors FlamePanel::ApplyLength + MainSequencer::SetEffectTimes: works out
+// the move-early lead (keeping the fire time fixed when it changes) and the
+// fitted length, then clamps against the timeline lock, the neighbouring
+// effects and the sequence end. Doesn't change anything; Swift applies the
+// result through SequencerViewModel.moveEffect so it lands on the undo stack.
+- (NSDictionary*)flameLengthPlanForRow:(int)rowIndex atIndex:(int)effectIndex {
+    if (!_context || !_context->HasModelManager()) return @{};
+    EffectLayer* layer = [self effectLayerForRow:rowIndex];
+    if (!layer || effectIndex < 0 || effectIndex >= layer->GetEffectCount()) return @{};
+    Effect* eff = layer->GetEffect(effectIndex);
+    if (!eff || eff->GetEffectName() != "Flame") return @{};
+    NSString* modelName = [self rowModelNameAtIndex:rowIndex];
+    const DmxFlame* model = FlameEffect::FlameModelFor(_context->GetModelManager()[modelName.UTF8String]);
+    if (!model) return @{};
+
+    const SettingsMap& settings = eff->GetSettings();
+    FlameParams p = FlameParams::FromSettings(settings, "E_");
+    auto* sf = _context->GetSequenceFile();
+    const int ft = sf ? std::max(1, sf->GetFrameMS()) : 25;
+    auto alignUp = [ft](int ms) { return ((ms + ft - 1) / ft) * ft; };
+
+    const int newLead = (p.moveEarly && p.repeat != FlameParams::Repeat::Marks)
+        ? alignUp(FlameEffect::FirstLeadMs(p, model)) : 0;
+    const int oldLead = (int)std::strtol(settings.Get("E_TEXTCTRL_Flame_LeadMs", "0").c_str(), nullptr, 10);
+    const int fit = p.fitLength ? FlameEffect::FitLengthMs(p, model, ft) : 0;
+    const int s0 = eff->GetStartTimeMS();
+    const int e0 = eff->GetEndTimeMS();
+
+    // keep the moment the flame fires where it was
+    int s = std::max(0, s0 + oldLead - newLead);
+    int e = e0;
+    if (fit > 0) e = s + fit;
+
+    std::string note;
+    bool needsMove = (s != s0 || e != e0);
+    bool canMove = true;
+    if (needsMove) {
+        if (eff->IsLocked()) {
+            note = "The effect is locked on the timeline, so its length wasn't changed.";
+            canMove = false;
+        } else {
+            int minStart = 0;
+            if (Effect* prev = layer->GetEffectBeforeTime(s0); prev != nullptr && prev != eff) {
+                minStart = prev->GetEndTimeMS();
+            }
+            int maxEnd = sf ? sf->GetSequenceDurationMS() : INT_MAX;
+            Effect* next = layer->GetEffectAfterTime(s0);
+            if (next != nullptr && next != eff) {
+                maxEnd = std::min(maxEnd, next->GetStartTimeMS());
+            }
+            s = RoundToMultipleOfPeriod(s, ft);
+            e = RoundToMultipleOfPeriod(e, ft);
+            if (s < minStart) {
+                e += minStart - s;
+                s = minStart;
+                note = std::string("Moved later: the effect before it ends at ") + FORMATTIME(minStart) + ".";
+            }
+            if (e > maxEnd) {
+                e = maxEnd;
+                note = (next != nullptr && next != eff)
+                    ? std::string("Shortened: the next effect starts at ") + FORMATTIME(maxEnd) + "."
+                    : std::string("Shortened: the sequence ends at ") + FORMATTIME(maxEnd) + ".";
+            }
+            if (e - s < ft) {
+                note = "No room to fit the effect here.";
+                canMove = false;
+            } else if (s == s0 && e == e0) {
+                // clamped back onto where it already is
+                canMove = false;
+            }
+        }
+    }
+    if (!canMove) {
+        s = s0;
+        e = e0;
+    }
+    return @{
+        @"frameMS": @(ft),
+        @"leadMS": @(newLead),
+        @"oldLeadMS": @(oldLead),
+        @"fitMS": @(fit),
+        @"shotMS": @(FlameEffect::ShotLengthMs(p, model)),
+        @"startMS": @(s),
+        @"endMS": @(e),
+        @"needsMove": @(needsMove),
+        @"canMove": @(canMove),
+        @"note": [NSString stringWithUTF8String:note.c_str()],
+    };
 }
 
 - (long)thumbnailFrameTimeMSForPath:(NSString*)path

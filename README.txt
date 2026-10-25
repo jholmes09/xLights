@@ -11,6 +11,12 @@ Issue Tracker is found here: www.github.com/xLightsSequencer/xLights/issues
 XLIGHTS/NUTCRACKER RELEASE NOTES
 ---------------------------------
 2026.18  September ??, 2026
+    -enh (jholmes)               New DMX Flame model (Galaxis G-Flame, Showven Circle Flamer, or a custom
+                                 JSON fixture) with an animated flame jet in the previews. xLights never
+                                 drives the units' arming channels
+    -enh (jholmes)               New Flame effect: pick presets, angles and shot lengths with one click,
+                                 repeat back-to-back or on timing marks, optionally move the nozzle early,
+                                 and the timeline bar sizes itself to the preset's real length
     -bug (dkulp)                 Windows - bundled third-party DLLs are now code signed so Windows 11
                                  Smart App Control no longer blocks xLights from starting (#7044)
     -enh (dkulp)                 New -q / --quiet command line switch logs the startup notices (show

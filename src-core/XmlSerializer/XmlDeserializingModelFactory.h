@@ -83,6 +83,7 @@ private:
     void DeserializeDmxMovingHeadComm(DmxMovingHeadComm* model, pugi::xml_node node);
 
     Model* DeserializeDmxGeneral(pugi::xml_node node, ModelManager& modelManager, bool importing);
+    Model* DeserializeDmxFlame(pugi::xml_node node, ModelManager& modelManager, bool importing);
     Model* DeserializeDmxFloodArea(pugi::xml_node node, ModelManager& modelManager, bool importing);
     Model* DeserializeDmxFloodlight(pugi::xml_node node, ModelManager& modelManager, bool importing);
     Model* DeserializeDmxMovingHead(pugi::xml_node node, ModelManager& modelManager, bool importing);

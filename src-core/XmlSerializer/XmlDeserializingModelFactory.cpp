@@ -49,6 +49,7 @@
 #include "../models/DMX/DmxFloodArea.h"
 #include "../models/DMX/DmxFloodlight.h"
 #include "../models/DMX/DmxGeneral.h"
+#include "../models/DMX/DmxFlame.h"
 #include "../models/DMX/DmxImage.h"
 #include "../models/DMX/DmxMovingHeadAdv.h"
 #include "../models/DMX/DmxMovingHead.h"
@@ -128,6 +129,8 @@ Model* XmlDeserializingModelFactory::Deserialize(pugi::xml_node node, ModelManag
         model = DeserializeDmxFloodlight(node, modelManager, importing);
     } else if (type == XmlNodeKeys::DmxGeneralType || node_name == "dmxgeneral") {
         model = DeserializeDmxGeneral(node, modelManager, importing);
+    } else if (type == XmlNodeKeys::DmxFlameType) {
+        model = DeserializeDmxFlame(node, modelManager, importing);
     } else if (type == XmlNodeKeys::DmxServoType || node_name == "dmxservo") {
         model = DeserializeDmxServo(node, modelManager, importing);
     } else if (type == XmlNodeKeys::DmxServo3dType || type == "DmxServo3Axis" || node_name == "dmxservo3d") {
@@ -1240,6 +1243,20 @@ Model* XmlDeserializingModelFactory::DeserializeDmxGeneral(pugi::xml_node node, 
     DmxGeneral* model = new DmxGeneral(modelManager);
     CommonDeserializeSteps(model, node, modelManager, importing);
     DeserializeDmxModel(model, node);
+    model->Setup();
+    return model;
+}
+
+Model* XmlDeserializingModelFactory::DeserializeDmxFlame(pugi::xml_node node, ModelManager& modelManager, bool importing) {
+    DmxFlame* model = new DmxFlame(modelManager);
+    CommonDeserializeSteps(model, node, modelManager, importing);
+    DeserializeDmxModel(model, node);
+    model->SetCustomFile(node.attribute("FlameCustomFile").as_string(""));
+    model->SetFixtureId(node.attribute("FlameFixture").as_string(FlameFixtures::ShowvenId));
+    model->SetMinPosition(node.attribute("FlameMinPos").as_int(1));
+    model->SetMaxPosition(node.attribute("FlameMaxPos").as_int(15));
+    model->SetFlip(std::string_view(node.attribute("FlameFlip").as_string("0")) == "1");
+    model->SetFlameSize(node.attribute("FlameSize").as_int(100));
     model->Setup();
     return model;
 }

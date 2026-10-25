@@ -1061,7 +1061,9 @@ void xLightsFrame::Scrub(wxCommandEvent& event)
             playModel->SetNodeChannelValues(node, &_seqData[frame][start]);
         }
         _modelPreviewPanel->setCurrentFrameTime(ms);
+        playModel->SetPreviewFrameContext(&_seqData, frame);
         playModel->DisplayEffectOnWindow(_modelPreviewPanel, mPointSize);
+        playModel->SetPreviewFrameContext(nullptr, -1);
     }
     _housePreviewPanel->GetModelPreview()->Render(ms, &_seqData[frame][0]);
     for (const auto& it : PreviewWindows) {
@@ -2899,7 +2901,9 @@ bool xLightsFrame::TimerRgbSeq(long msec)
                 playModel->SetNodeChannelValues(node, &_seqData[frame][start]);
             }
             _modelPreviewPanel->setCurrentFrameTime(curt);
+            playModel->SetPreviewFrameContext(&_seqData, frame);
             playModel->DisplayEffectOnWindow(_modelPreviewPanel, mPointSize);
+            playModel->SetPreviewFrameContext(nullptr, -1);
         }
         if (!_presetRendering && NeedToRenderFrame(_housePreviewPanel->GetModelPreview(), OutputTimer, didRender)) {
             _housePreviewPanel->GetModelPreview()->Render(curt, &_seqData[frame][0]);
@@ -3227,6 +3231,26 @@ void xLightsFrame::TipOfDayReady(wxCommandEvent& event)
 void xLightsFrame::SetEffectDuration(wxCommandEvent& event)
 {
     mainSequencer->SetEffectDuration(event.GetString(), event.GetInt());
+}
+
+bool xLightsFrame::SetSelectedEffectTimes(const std::string& effectType, int startMS, int endMS, std::string& note)
+{
+    if (mainSequencer == nullptr) {
+        return false;
+    }
+    int rs = 0;
+    int re = 0;
+    std::string model;
+    if (!mainSequencer->SetEffectTimes(effectType, startMS, endMS, note, rs, re, model)) {
+        return false;
+    }
+    RenderEffectForModel(model, rs, re, true);
+    return true;
+}
+
+Effect* xLightsFrame::GetSelectedEffectForPanel() const
+{
+    return mainSequencer == nullptr ? nullptr : mainSequencer->GetSelectedEffect();
 }
 
 void xLightsFrame::ApplyLast(wxCommandEvent& event)

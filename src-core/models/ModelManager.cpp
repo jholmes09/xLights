@@ -61,6 +61,7 @@
 #include "DMX/DmxFloodArea.h"
 #include "DMX/DmxFloodlight.h"
 #include "DMX/DmxGeneral.h"
+#include "DMX/DmxFlame.h"
 #include "DMX/DmxMovingHead.h"
 #include "DMX/DmxMovingHeadAdv.h"
 #include "DMX/DmxServo.h"
@@ -1421,6 +1422,12 @@ Model* ModelManager::CreateDefaultModel(const std::string& type, const std::stri
         auto* m = new DmxGeneral(*this);
         protocol = xlEMPTY_STRING;
         m->SetDmxChannelCount(8);
+        m->SetStringType("Single Color White");
+        model = m;
+    } else if (type == "DmxFlame") {
+        auto* m = new DmxFlame(*this);
+        protocol = xlEMPTY_STRING;
+        m->SetFixtureId(FlameFixtures::ShowvenId);
         m->SetStringType("Single Color White");
         model = m;
     } else if (type == "DmxMovingHeadAdv") {

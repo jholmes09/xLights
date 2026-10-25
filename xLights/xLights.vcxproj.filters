@@ -505,6 +505,9 @@
     <ClCompile Include="..\src-core\effects\ServoEffect.cpp">
       <Filter>Effects</Filter>
     </ClCompile>
+    <ClCompile Include="..\src-core\effects\FlameEffect.cpp">
+      <Filter>Effects</Filter>
+    </ClCompile>
     <ClCompile Include="..\src-core\effects\PlasmaEffect.cpp">
       <Filter>Effects</Filter>
     </ClCompile>
@@ -743,6 +746,12 @@
       <Filter>Models</Filter>
     </ClCompile>
     <ClCompile Include="..\src-core\models\DMX\DmxGeneral.cpp">
+      <Filter>Models\DMX</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src-core\models\DMX\DmxFlame.cpp">
+      <Filter>Models\DMX</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src-core\models\DMX\FlameFixture.cpp">
       <Filter>Models\DMX</Filter>
     </ClCompile>
     <ClCompile Include="..\src-ui-wx\app-shell\AboutDialog.cpp" />
@@ -1051,6 +1060,9 @@
     <ClCompile Include="..\src-ui-wx\modelproperties\adapters\DmxGeneralPropertyAdapter.cpp">
       <Filter>modelproperties\adapters</Filter>
     </ClCompile>
+    <ClCompile Include="..\src-ui-wx\modelproperties\adapters\DmxFlamePropertyAdapter.cpp">
+      <Filter>modelproperties\adapters</Filter>
+    </ClCompile>
     <ClCompile Include="..\src-ui-wx\modelproperties\adapters\DmxFloodlightPropertyAdapter.cpp">
       <Filter>modelproperties\adapters</Filter>
     </ClCompile>
@@ -1336,6 +1348,9 @@
       <Filter>effectpanels</Filter>
     </ClCompile>
     <ClCompile Include="..\src-ui-wx\effectpanels\ServoPanel.cpp">
+      <Filter>effectpanels</Filter>
+    </ClCompile>
+    <ClCompile Include="..\src-ui-wx\effectpanels\FlamePanel.cpp">
       <Filter>effectpanels</Filter>
     </ClCompile>
     <ClCompile Include="..\src-ui-wx\effectpanels\ShaderPanel.cpp">
@@ -2070,6 +2085,9 @@
     <ClInclude Include="..\src-core\effects\ServoEffect.h">
       <Filter>Effects</Filter>
     </ClInclude>
+    <ClInclude Include="..\src-core\effects\FlameEffect.h">
+      <Filter>Effects</Filter>
+    </ClInclude>
     <ClInclude Include="..\src-core\effects\PlasmaEffect.h">
       <Filter>Effects</Filter>
     </ClInclude>
@@ -2303,6 +2321,12 @@
       <Filter>Models</Filter>
     </ClInclude>
     <ClInclude Include="..\src-core\models\DMX\DmxGeneral.h">
+      <Filter>Models\DMX</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src-core\models\DMX\DmxFlame.h">
+      <Filter>Models\DMX</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src-core\models\DMX\FlameFixture.h">
       <Filter>Models\DMX</Filter>
     </ClInclude>
     <ClInclude Include="..\src-ui-wx\app-shell\AboutDialog.h" />
@@ -2591,6 +2615,9 @@
     <ClInclude Include="..\src-ui-wx\modelproperties\adapters\DmxGeneralPropertyAdapter.h">
       <Filter>modelproperties\adapters</Filter>
     </ClInclude>
+    <ClInclude Include="..\src-ui-wx\modelproperties\adapters\DmxFlamePropertyAdapter.h">
+      <Filter>modelproperties\adapters</Filter>
+    </ClInclude>
     <ClInclude Include="..\src-ui-wx\modelproperties\adapters\DmxFloodlightPropertyAdapter.h">
       <Filter>modelproperties\adapters</Filter>
     </ClInclude>
@@ -2855,6 +2882,9 @@
       <Filter>effectpanels</Filter>
     </ClInclude>
     <ClInclude Include="..\src-ui-wx\effectpanels\ServoPanel.h">
+      <Filter>effectpanels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\src-ui-wx\effectpanels\FlamePanel.h">
       <Filter>effectpanels</Filter>
     </ClInclude>
     <ClInclude Include="..\src-ui-wx\effectpanels\ShaderPanel.h">

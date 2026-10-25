@@ -3449,6 +3449,25 @@ public:
         ctx->SetModelColors(frameMS);
     }
 
+    // The rendered show + frame index, handed to each model around its
+    // draw (Model::SetPreviewFrameContext) so models that look back
+    // through earlier frames — DMX Flame presets — draw exactly when
+    // scrubbing. Same hand-off as desktop tabSequencer / ModelPreview::
+    // Render. Not for the layout editor (desktop's layout preview draws
+    // without it) or while the submodel editor owns the node colours.
+    const SequenceData* frameSeq = nullptr;
+    int frameIdx = -1;
+    if (!_suppressChannelUpdate && !_isLayoutEditor) {
+        SequenceData& sd = ctx->GetSequenceData();
+        if (sd.IsValidData() && sd.FrameTime() > 0) {
+            const int f = frameMS / (int)sd.FrameTime();
+            if (f >= 0 && (unsigned int)f < sd.NumFrames()) {
+                frameSeq = &sd;
+                frameIdx = f;
+            }
+        }
+    }
+
     // Set current frame time so models can query it
     _preview->SetCurrentFrameTime(frameMS);
 
@@ -3498,7 +3517,9 @@ public:
             auto& models = ctx->GetModelManager();
             Model* m = models[_previewModel];
             if (m) {
+                m->SetPreviewFrameContext(frameSeq, frameIdx);
                 m->DisplayEffectOnWindow(_preview.get(), pointSize);
+                m->SetPreviewFrameContext(nullptr, -1);
             } else {
                 [self setErrorReasonInternal:
                     [NSString stringWithFormat:@"Model '%s' not found in layout",
@@ -3664,6 +3685,7 @@ public:
             // BoxedScreenLocation place models at their saved Z, and with
             // ortho left-handed near=1/far=0 any non-zero Z put geometry
             // outside the frustum.
+            model->SetPreviewFrameContext(frameSeq, frameIdx);
             model->DisplayModelOnWindow(_preview.get(), graphicsCtx, solidProg, transparentProg,
                                          is3d,
                                          /* color */ useColor,
@@ -3672,6 +3694,7 @@ public:
                                          /* highlightFirst */ _showFirstPixel,
                                          /* highlightpixel */ 0,
                                          /* boundingBox */ nullptr);
+            model->SetPreviewFrameContext(nullptr, -1);
         }
 
         // J-10 — submodel-only group overlay. After every parent

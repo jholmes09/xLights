@@ -926,8 +926,12 @@
 		<Unit filename="../src-core/effects/RippleEffect.h" />
 		<Unit filename="../src-core/effects/ServoEffect.cpp" />
 		<Unit filename="../src-core/effects/ServoEffect.h" />
+		<Unit filename="../src-core/effects/FlameEffect.cpp" />
+		<Unit filename="../src-core/effects/FlameEffect.h" />
 		<Unit filename="../src-ui-wx/effectpanels/ServoPanel.cpp" />
 		<Unit filename="../src-ui-wx/effectpanels/ServoPanel.h" />
+		<Unit filename="../src-ui-wx/effectpanels/FlamePanel.cpp" />
+		<Unit filename="../src-ui-wx/effectpanels/FlamePanel.h" />
 		<Unit filename="../src-core/effects/ShaderEffect.cpp" />
 		<Unit filename="../src-core/effects/SPIRVShaderEffect.cpp" />
 		<Unit filename="../src-core/effects/SPIRVShaderEffect.h" />
@@ -1213,6 +1217,10 @@
 		<Unit filename="../src-core/models/DMX/DmxFloodlight.h" />
 		<Unit filename="../src-core/models/DMX/DmxGeneral.cpp" />
 		<Unit filename="../src-core/models/DMX/DmxGeneral.h" />
+		<Unit filename="../src-core/models/DMX/DmxFlame.cpp" />
+		<Unit filename="../src-core/models/DMX/DmxFlame.h" />
+		<Unit filename="../src-core/models/DMX/FlameFixture.cpp" />
+		<Unit filename="../src-core/models/DMX/FlameFixture.h" />
 		<Unit filename="../src-core/models/DMX/DmxImage.cpp" />
 		<Unit filename="../src-core/models/DMX/DmxImage.h" />
 		<Unit filename="../src-core/models/DMX/DmxModel.cpp" />
@@ -1547,6 +1555,8 @@
 		<Unit filename="../src-ui-wx/modelproperties/adapters/DmxPropertyAdapter.h" />
 		<Unit filename="../src-ui-wx/modelproperties/adapters/DmxGeneralPropertyAdapter.cpp" />
 		<Unit filename="../src-ui-wx/modelproperties/adapters/DmxGeneralPropertyAdapter.h" />
+		<Unit filename="../src-ui-wx/modelproperties/adapters/DmxFlamePropertyAdapter.cpp" />
+		<Unit filename="../src-ui-wx/modelproperties/adapters/DmxFlamePropertyAdapter.h" />
 		<Unit filename="../src-ui-wx/modelproperties/adapters/DmxFloodlightPropertyAdapter.cpp" />
 		<Unit filename="../src-ui-wx/modelproperties/adapters/DmxFloodlightPropertyAdapter.h" />
 		<Unit filename="../src-ui-wx/modelproperties/adapters/DmxMovingHeadPropertyAdapter.cpp" />

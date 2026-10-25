@@ -1271,6 +1271,18 @@ bool ModelPreview::ShouldDrawViewObject(const ViewObject* view_object) const
 void ModelPreview::Render(uint32_t frameTime, const unsigned char *data, bool swapBuffers/*=true*/) {
     currentFrameTime = frameTime;
     if (StartDrawing(mPointSize)) {
+        // Lets models whose picture depends on earlier frames (flame presets)
+        // read back through the rendered show, so a scrubbed frame matches playback.
+        const SequenceData* seq = nullptr;
+        int seqFrame = -1;
+        if (xlights != nullptr && xlights->GetSeqData().IsValidData() && xlights->GetSeqData().FrameTime() > 0) {
+            const SequenceData& sd = xlights->GetSeqData();
+            int f = (int)(frameTime / sd.FrameTime());
+            if (f >= 0 && f < (int)sd.NumFrames() && sd[f][0] == data) {
+                seq = &sd;
+                seqFrame = f;
+            }
+        }
         const std::vector<Model*> &models = GetModels();
         std::map<int32_t, std::list<Model*>> sortedModels;
         for (auto m : models) {
@@ -1285,7 +1297,9 @@ void ModelPreview::Render(uint32_t frameTime, const unsigned char *data, bool sw
         }
         for (auto iter = sortedModels.rbegin(); iter != sortedModels.rend(); ++iter) {
             for (auto m : iter->second) {
+                m->SetPreviewFrameContext(seq, seqFrame);
                 m->DisplayModelOnWindow(this, currentContext, solidProgram, transparentProgram, is3d);
+                m->SetPreviewFrameContext(nullptr, -1);
             }
         }
         // draw all the view objects (see the note in the other Render overload)

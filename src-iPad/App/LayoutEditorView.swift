@@ -384,6 +384,9 @@ struct LayoutEditorView: View {
     // mesh files instead of bitmaps.
     @State private var meshFilePickerVisible: Bool = false
     @State private var pendingMeshPickKey: String = ""
+    /// The mesh fileImporter also serves `jsonFile` rows (DMX Flame
+    /// custom fixture definition); this swaps its allowed types.
+    @State private var meshPickerTypes: [UTType] = LayoutEditorView.meshFileImporterTypes
     @State private var pendingMeshPickModel: String = ""
 
     // J-23 — Custom-model visual editor payload. When non-nil
@@ -431,6 +434,10 @@ struct LayoutEditorView: View {
         types.append(.data)
         return types
     }()
+
+    /// UTTypes for `jsonFile` descriptor rows (DMX Flame custom
+    /// fixture definition).
+    private static let jsonFileImporterTypes: [UTType] = [.json, .data]
 
     /// J-12 — Add-View-Object sheet → bridge create. Auto-
     /// selects the new object so the property pane opens on
@@ -877,7 +884,7 @@ struct LayoutEditorView: View {
         .modifier(PerTypeFilePickers(
             imageVisible: $imageFilePickerVisible,
             meshVisible: $meshFilePickerVisible,
-            meshContentTypes: Self.meshFileImporterTypes,
+            meshContentTypes: meshPickerTypes,
             onImagePick: handleImageFilePick,
             onMeshPick: handleMeshFilePick))
         // J-23 / J-23.4 — Custom-model visual editor. Full-screen
@@ -2650,6 +2657,9 @@ struct LayoutEditorView: View {
             imageFilePickerVisible = true
         }
         let pickMesh: (String) -> Void = { key in
+            let kind = descriptors.first { ($0["key"] as? String) == key }?["kind"] as? String
+            meshPickerTypes = kind == "jsonFile" ? Self.jsonFileImporterTypes
+                                                 : Self.meshFileImporterTypes
             pendingMeshPickKey = key
             meshFilePickerVisible = true
         }
@@ -3653,6 +3663,7 @@ struct LayoutEditorView: View {
         case "Candy Canes": return "Candy Canes"
         case "Channel Block": return "Channel Block"
         // LAY-1 — DMX / moving-head family.
+        case "DmxFlame":        return "DMX Flame"
         case "DmxFloodArea":    return "DMX Flood Area"
         case "DmxFloodlight":   return "DMX Floodlight"
         case "DmxGeneral":      return "DMX General"
@@ -6445,6 +6456,39 @@ private struct LayoutEditorPropertiesView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .accessibilityLabel("Clear mesh")
+                }
+            }
+        case "jsonFile":
+            // DMX Flame custom fixture definition. Same layout as
+            // meshFile; the parent swaps the shared mesh importer's
+            // content types to JSON for this kind.
+            let path = d["value"] as? String ?? ""
+            let display = path.isEmpty ? "—" : (path as NSString).lastPathComponent
+            HStack(spacing: 6) {
+                Text(display)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .frame(maxWidth: 110, alignment: .trailing)
+                Button {
+                    onPickMeshFile(key)
+                } label: {
+                    Image(systemName: "doc.text")
+                        .font(.caption2)
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("Pick definition file")
+                if !path.isEmpty {
+                    Button(role: .destructive) {
+                        typeCommit(key, "" as NSString)
+                    } label: {
+                        Image(systemName: "xmark.circle")
+                            .font(.caption2)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("Clear definition file")
                 }
             }
         case "button":

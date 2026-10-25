@@ -20,6 +20,7 @@ class CustomModel;
 class DmxFloodArea;
 class DmxFloodlight;
 class DmxGeneral;
+class DmxFlame;
 class DmxMovingHead;
 class DmxMovingHeadAdv;
 class DmxServo;
@@ -58,6 +59,7 @@ public:
     virtual void Visit(const DmxFloodArea& model) = 0;
     virtual void Visit(const DmxFloodlight& model) = 0;
     virtual void Visit(const DmxGeneral& model) = 0;
+    virtual void Visit(const DmxFlame& model) = 0;
     virtual void Visit(const DmxMovingHead& model) = 0;
     virtual void Visit(const DmxMovingHeadAdv& model) = 0;
     virtual void Visit(const DmxServo& model) = 0;

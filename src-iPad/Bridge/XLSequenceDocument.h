@@ -2990,6 +2990,27 @@ NS_ASSUME_NONNULL_BEGIN
 // already works for playback. Returns 0 on failure.
 - (long)videoDurationMSForPath:(NSString*)path;
 
+// Flame effect panel support (DMX Flame model). Empty dictionary when the
+// model isn't a DMX Flame. Keys: id, name, hasAngle, hasPresets, flip,
+// minAllowedDeg, maxAllowedDeg, presets [{n, name, group, lengthMs,
+// isStatic, position, longFlame}], positions [{n, deg, allowed}],
+// shotPresetsMs [ms]. Mirrors what FlamePanel reads from the row's model.
+- (NSDictionary*)flameFixtureInfoForModel:(NSString*)modelName
+    NS_SWIFT_NAME(flameFixtureInfo(forModel:));
+// Cheap gate for the effect panel's visibility checks: 0 = not a DMX
+// Flame; bit 0 = is a flame, bit 1 = has angle, bit 2 = has presets.
+- (int)flameCapabilitiesForModel:(NSString*)modelName
+    NS_SWIFT_NAME(flameCapabilities(forModel:));
+// Auto length / move-early plan for a Flame effect (FlamePanel::ApplyLength
+// + MainSequencer::SetEffectTimes). Read-only: returns the target
+// startMS/endMS (already clamped against lock, neighbours and the sequence
+// end), needsMove / canMove, leadMS (the new move-early lead to store in
+// E_TEXTCTRL_Flame_LeadMs), oldLeadMS, fitMS (0 when Fit length doesn't
+// apply), shotMS, frameMS and a user-facing note. Empty dictionary when the
+// effect isn't a Flame effect on a DMX Flame model.
+- (NSDictionary*)flameLengthPlanForRow:(int)rowIndex atIndex:(int)effectIndex
+    NS_SWIFT_NAME(flameLengthPlan(forRow:at:));
+
 // Effect icons. Returns BGRA-premultiplied pixel data (width*height*4
 // bytes) plus the chosen bucket size — parsed directly from the
 // RenderableEffect's compiled-in XPM data. `desiredSize` is rounded

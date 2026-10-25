@@ -31,6 +31,7 @@
 #include "adapters/MultiPointPropertyAdapter.h"
 #include "adapters/DmxPropertyAdapter.h"
 #include "adapters/DmxGeneralPropertyAdapter.h"
+#include "adapters/DmxFlamePropertyAdapter.h"
 #include "adapters/DmxFloodlightPropertyAdapter.h"
 #include "adapters/DmxMovingHeadPropertyAdapter.h"
 #include "adapters/DmxMovingHeadAdvPropertyAdapter.h"
@@ -87,6 +88,8 @@ std::unique_ptr<ModelPropertyAdapter> ModelPropertyManager::CreateAdapter(Model&
             return std::make_unique<DmxFloodlightPropertyAdapter>(model);
         case DisplayAsType::DmxGeneral:
             return std::make_unique<DmxGeneralPropertyAdapter>(model);
+        case DisplayAsType::DmxFlame:
+            return std::make_unique<DmxFlamePropertyAdapter>(model);
         case DisplayAsType::DmxMovingHead:
             return std::make_unique<DmxMovingHeadPropertyAdapter>(model);
         case DisplayAsType::DmxMovingHeadAdv:

@@ -2224,6 +2224,67 @@ void MainSequencer::SetEffectDuration(const std::string& effectType, const uint3
     }
 }
 
+bool MainSequencer::SetEffectTimes(const std::string& effectType, int startMS, int endMS, std::string& note, int& renderStart, int& renderEnd, std::string& modelName)
+{
+    Effect* eff = GetSelectedEffect();
+    if (eff == nullptr || eff->GetEffectName() != effectType) {
+        return false;
+    }
+    if (eff->IsLocked()) {
+        note = "The effect is locked on the timeline, so its length wasn't changed.";
+        return false;
+    }
+    EffectLayer* layer = eff->GetParentEffectLayer();
+    const int frameMS = PanelTimeLine->GetFrameMS();
+    const int oldStart = eff->GetStartTimeMS();
+    const int oldEnd = eff->GetEndTimeMS();
+
+    int minStart = 0;
+    if (Effect* prev = layer->GetEffectBeforeTime(oldStart); prev != nullptr && prev != eff) {
+        minStart = prev->GetEndTimeMS();
+    }
+    int maxEnd = PanelTimeLine->GetSequenceEnd();
+    Effect* next = layer->GetEffectAfterTime(oldStart);
+    if (next != nullptr && next != eff) {
+        maxEnd = std::min(maxEnd, next->GetStartTimeMS());
+    }
+
+    int s = TimeLine::RoundToMultipleOfPeriod(startMS, frameMS);
+    int e = TimeLine::RoundToMultipleOfPeriod(endMS, frameMS);
+    if (s < minStart) {
+        e += minStart - s;
+        s = minStart;
+        note = std::string("Moved later: the effect before it ends at ") + FORMATTIME(minStart) + ".";
+    }
+    if (e > maxEnd) {
+        e = maxEnd;
+        note = next != nullptr && next != eff ? std::string("Shortened: the next effect starts at ") + FORMATTIME(maxEnd) + "."
+                                              : std::string("Shortened: the sequence ends at ") + FORMATTIME(maxEnd) + ".";
+    }
+    if (e - s < frameMS) {
+        note = "No room to fit the effect here.";
+        return false;
+    }
+    if (s == oldStart && e == oldEnd) {
+        return false;
+    }
+
+    modelName = layer->GetParentElement()->GetModelName();
+    mSequenceElements->get_undo_mgr().CreateUndoStep();
+    mSequenceElements->get_undo_mgr().CaptureEffectToBeMoved(modelName, layer->GetIndex(), eff->GetID(), oldStart, oldEnd);
+    if (s < oldStart) {
+        eff->SetStartTimeMS(s);
+        eff->SetEndTimeMS(e);
+    } else {
+        eff->SetEndTimeMS(e);
+        eff->SetStartTimeMS(s);
+    }
+    renderStart = std::min(oldStart, s);
+    renderEnd = std::max(oldEnd, e);
+    PanelEffectGrid->ForceRefresh();
+    return true;
+}
+
 void MainSequencer::TagAllSelectedEffects()
 {
     for(int row=0;row<mSequenceElements->GetRowInformationSize();row++) {

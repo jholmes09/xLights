@@ -28,6 +28,7 @@
 #include "PicturesPanel.h"
 #include "RipplePanel.h"
 #include "ServoPanel.h"
+#include "FlamePanel.h"
 #include "ShaderPanel.h"
 #include "ShapePanel.h"
 #include "SketchPanel.h"
@@ -117,6 +118,7 @@ void EffectPanelManager::RegisterPanels() {
     RegisterJson(E::eff_FILL, "Fill");
     RegisterJson(E::eff_FIRE, "Fire");
     RegisterJson(E::eff_FIREWORKS, "Fireworks");
+    RegisterJsonSubclass<FlamePanel>(E::eff_FLAME, "Flame");
     RegisterJson(E::eff_GALAXY, "Galaxy");
     RegisterJson(E::eff_GARLANDS, "Garlands");
     RegisterJson(E::eff_GLEDIATOR, "Glediator");

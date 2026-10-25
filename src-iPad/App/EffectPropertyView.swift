@@ -223,6 +223,14 @@ struct EffectPropertyView: View {
             ServoStartEndRowView()
         case "Servo_ButtonRow":
             ServoButtonRowView()
+        case "Flame_PresetPicker":
+            FlamePresetPickerRowView()
+        case "Flame_FanButtons":
+            FlameFanButtonsRowView()
+        case "Flame_ShotButtons":
+            FlameShotButtonsRowView()
+        case "Flame_Info":
+            FlameInfoRowView()
         case "Shape_Font":
             ShapeFontRowView()
         case "Shape_Char":

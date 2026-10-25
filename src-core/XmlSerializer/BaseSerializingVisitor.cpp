@@ -60,6 +60,7 @@
 #include "../models/DMX/DmxFloodArea.h"
 #include "../models/DMX/DmxFloodlight.h"
 #include "../models/DMX/DmxGeneral.h"
+#include "../models/DMX/DmxFlame.h"
 #include "../models/DMX/DmxImage.h"
 #include "../models/DMX/DmxShutterAbility.h"
 #include "../models/DMX/DmxMovingHeadAdv.h"
@@ -1048,6 +1049,24 @@ void BaseSerializingVisitor::Visit(const DmxGeneral& model) {
     AttrCollector attrs;
     CommonVisitSteps(model, attrs);
     AddDmxModelAttributes(model, attrs);
+    SortAttributes(attrs);
+    WriteOpenTag(XmlNodeKeys::ModelNodeName, attrs, false);
+    WriteOtherElements(dynamic_cast<const Model*>(&model));
+    WriteCloseTag();
+}
+
+void BaseSerializingVisitor::Visit(const DmxFlame& model) {
+    AttrCollector attrs;
+    CommonVisitSteps(model, attrs);
+    AddDmxModelAttributes(model, attrs);
+    attrs.Add("FlameFixture", model.GetFixtureId());
+    if (!model.GetCustomFile().empty()) {
+        attrs.Add("FlameCustomFile", model.GetCustomFile());
+    }
+    attrs.Add("FlameMinPos", std::to_string(model.GetMinPosition()));
+    attrs.Add("FlameMaxPos", std::to_string(model.GetMaxPosition()));
+    attrs.Add("FlameFlip", model.GetFlip() ? "1" : "0");
+    attrs.Add("FlameSize", std::to_string(model.GetFlameSize()));
     SortAttributes(attrs);
     WriteOpenTag(XmlNodeKeys::ModelNodeName, attrs, false);
     WriteOtherElements(dynamic_cast<const Model*>(&model));

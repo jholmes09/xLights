@@ -45,3 +45,4 @@
 #include "add_dmx_servo3d.xpm"
 #include "add_dmx_servo_3axis.xpm"
 #include "add_dmx_general.xpm"
+#include "add_dmx_flame.xpm"

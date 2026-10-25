@@ -594,7 +594,9 @@ xcopy /Y /S /I "$(SolutionDir)..\resources\meshobjects\*" "$(TargetDir)meshobjec
     <ClCompile Include="..\src-core\utils\AnimatedImage.cpp" />
     <ClCompile Include="..\src-core\effects\LiquidEffect.cpp" />
     <ClCompile Include="..\src-core\effects\ServoEffect.cpp" />
+    <ClCompile Include="..\src-core\effects\FlameEffect.cpp" />
     <ClCompile Include="..\src-ui-wx\effectpanels\ServoPanel.cpp" />
+    <ClCompile Include="..\src-ui-wx\effectpanels\FlamePanel.cpp" />
     <ClCompile Include="..\src-ui-wx\app-shell\EmailDialog.cpp" />
     <ClCompile Include="..\src-ui-wx\import_export\ExportSettings.cpp" />
     <ClCompile Include="..\src-ui-wx\diagnostics\FindDataPanel.cpp" />
@@ -673,6 +675,7 @@ xcopy /Y /S /I "$(SolutionDir)..\resources\meshobjects\*" "$(TargetDir)meshobjec
     <ClCompile Include="..\src-ui-wx\modelproperties\adapters\MultiPointPropertyAdapter.cpp" />
     <ClCompile Include="..\src-ui-wx\modelproperties\adapters\DmxPropertyAdapter.cpp" />
     <ClCompile Include="..\src-ui-wx\modelproperties\adapters\DmxGeneralPropertyAdapter.cpp" />
+    <ClCompile Include="..\src-ui-wx\modelproperties\adapters\DmxFlamePropertyAdapter.cpp" />
     <ClCompile Include="..\src-ui-wx\modelproperties\adapters\DmxFloodlightPropertyAdapter.cpp" />
     <ClCompile Include="..\src-ui-wx\modelproperties\adapters\DmxMovingHeadPropertyAdapter.cpp" />
     <ClCompile Include="..\src-ui-wx\modelproperties\adapters\DmxMovingHeadAdvPropertyAdapter.cpp" />
@@ -720,6 +723,8 @@ xcopy /Y /S /I "$(SolutionDir)..\resources\meshobjects\*" "$(TargetDir)meshobjec
     <ClCompile Include="..\src-core\models\DMX\DmxFloodArea.cpp" />
     <ClCompile Include="..\src-core\models\DMX\DmxFloodlight.cpp" />
     <ClCompile Include="..\src-core\models\DMX\DmxGeneral.cpp" />
+    <ClCompile Include="..\src-core\models\DMX\DmxFlame.cpp" />
+    <ClCompile Include="..\src-core\models\DMX\FlameFixture.cpp" />
     <ClCompile Include="..\src-core\models\DMX\DmxImage.cpp" />
     <ClCompile Include="..\src-core\models\DMX\DmxModel.cpp" />
     <ClCompile Include="..\src-core\models\DMX\DmxMovingHead.cpp" />
@@ -1389,6 +1394,8 @@ xcopy /Y /S /I "$(SolutionDir)..\resources\meshobjects\*" "$(TargetDir)meshobjec
     <ClInclude Include="..\src-core\models\DMX\DmxFloodArea.h" />
     <ClInclude Include="..\src-core\models\DMX\DmxFloodlight.h" />
     <ClInclude Include="..\src-core\models\DMX\DmxGeneral.h" />
+    <ClInclude Include="..\src-core\models\DMX\DmxFlame.h" />
+    <ClInclude Include="..\src-core\models\DMX\FlameFixture.h" />
     <ClInclude Include="..\src-core\models\DMX\DmxImage.h" />
     <ClInclude Include="..\src-core\models\DMX\DmxModel.h" />
     <ClInclude Include="..\src-core\models\DMX\DmxMovingHead.h" />
@@ -1424,7 +1431,9 @@ xcopy /Y /S /I "$(SolutionDir)..\resources\meshobjects\*" "$(TargetDir)meshobjec
     <ClInclude Include="..\src-core\utils\AnimatedImage.h" />
     <ClInclude Include="..\src-core\effects\LiquidEffect.h" />
     <ClInclude Include="..\src-core\effects\ServoEffect.h" />
+    <ClInclude Include="..\src-core\effects\FlameEffect.h" />
     <ClInclude Include="..\src-ui-wx\effectpanels\ServoPanel.h" />
+    <ClInclude Include="..\src-ui-wx\effectpanels\FlamePanel.h" />
     <ClInclude Include="..\src-ui-wx\setup\IPEntryDialog.h" />
     <ClInclude Include="..\src-ui-wx\setup\MultiControllerUploadDialog.h" />
     <ClInclude Include="..\src-ui-wx\sequencer\NoteRangeDialog.h" />
@@ -1849,6 +1858,7 @@ xcopy /Y /S /I "$(SolutionDir)..\resources\meshobjects\*" "$(TargetDir)meshobjec
     <ClInclude Include="..\src-ui-wx\modelproperties\adapters\MultiPointPropertyAdapter.h" />
     <ClInclude Include="..\src-ui-wx\modelproperties\adapters\DmxPropertyAdapter.h" />
     <ClInclude Include="..\src-ui-wx\modelproperties\adapters\DmxGeneralPropertyAdapter.h" />
+    <ClInclude Include="..\src-ui-wx\modelproperties\adapters\DmxFlamePropertyAdapter.h" />
     <ClInclude Include="..\src-ui-wx\modelproperties\adapters\DmxFloodlightPropertyAdapter.h" />
     <ClInclude Include="..\src-ui-wx\modelproperties\adapters\DmxMovingHeadPropertyAdapter.h" />
     <ClInclude Include="..\src-ui-wx\modelproperties\adapters\DmxMovingHeadAdvPropertyAdapter.h" />
