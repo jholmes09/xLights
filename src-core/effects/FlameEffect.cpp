@@ -25,6 +25,7 @@
 #include "../graphics/xlGraphicsAccumulators.h"
 #include "../models/DMX/DmxFlame.h"
 #include "../models/DMX/FlameFixture.h"
+#include "../models/ModelGroup.h"
 #include "../render/Effect.h"
 #include "../render/EffectLayer.h"
 #include "../render/Element.h"
@@ -42,6 +43,27 @@ namespace {
     int AlignDown(int ms, int frameMs) {
         if (frameMs <= 0) return ms;
         return (ms / frameMs) * frameMs;
+    }
+    // Small deterministic generator: the same unit and effect always get the
+    // same "random" shots, so renders and scrubbing never change.
+    struct FlameRng {
+        uint64_t state;
+        explicit FlameRng(uint64_t seed) : state(seed ? seed : 0x9E3779B97F4A7C15ULL) {}
+        uint64_t Next() {
+            uint64_t z = (state += 0x9E3779B97F4A7C15ULL);
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+            return z ^ (z >> 31);
+        }
+        double Unit() { return (double)(Next() >> 11) / 9007199254740992.0; } // [0,1)
+    };
+    uint64_t HashName(const std::string& s, uint64_t seed) {
+        uint64_t h = 1469598103934665603ULL ^ seed;
+        for (unsigned char c : s) {
+            h ^= c;
+            h *= 1099511628211ULL;
+        }
+        return h;
     }
     int AlignNearest(int ms, int frameMs) {
         if (frameMs <= 0) return ms;
@@ -64,6 +86,8 @@ FlameParams FlameParams::FromSettings(const SettingsMap& s, const std::string& p
         p.repeat = Repeat::BackToBack;
     } else if (repeat == "On timing marks") {
         p.repeat = Repeat::Marks;
+    } else if (repeat == "Random") {
+        p.repeat = Repeat::Random;
     } else {
         p.repeat = Repeat::Once;
     }
@@ -74,6 +98,8 @@ FlameParams FlameParams::FromSettings(const SettingsMap& s, const std::string& p
     p.pattern = ParsePattern(s.Get(prefix + "TEXTCTRL_Flame_Pattern", ""));
     p.shotMs = std::max(10, s.GetInt(prefix + "SPINCTRL_Flame_ShotMs", 500));
     p.gapMs = std::max(0, s.GetInt(prefix + "SPINCTRL_Flame_GapMs", 0));
+    p.shotMaxMs = std::max(0, s.GetInt(prefix + "SPINCTRL_Flame_ShotMaxMs", 0));
+    p.rate = std::clamp(s.GetDouble(prefix + "TEXTCTRL_Flame_Rate", 1.0), 0.05, 20.0);
     p.moveEarly = s.GetBool(prefix + "CHECKBOX_Flame_MoveEarly", false);
     p.fitLength = s.GetBool(prefix + "CHECKBOX_Flame_FitLength", true);
     return p;
@@ -293,6 +319,47 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
         }
         break;
     }
+    case FlameParams::Repeat::Random: {
+        FlameRng rng(HashName(model->GetFullName(), (uint64_t)startMs));
+        const bool varied = plan.action != FlameParams::Action::Preset && p.shotMaxMs > len;
+        const double meanLen = varied ? (len + p.shotMaxMs) / 2.0 : (double)lenAligned;
+        const double meanInterval = 1000.0 / p.rate;
+        const double meanWait = std::max(0.0, meanInterval - meanLen);
+        const int minGap = std::max(frameMs, AlignUp(p.gapMs, frameMs));
+        // first shot lands somewhere in the first interval so units don't start together
+        double t = S + rng.Unit() * meanInterval;
+        int prevEnd = S;
+        const std::vector<int>& choices = p.pattern;
+        for (int i = 0; i < 100000; ++i) {
+            int shotLen = lenAligned;
+            if (varied) {
+                shotLen = std::max(frameMs, AlignUp(len + (int)(rng.Unit() * (p.shotMaxMs - len + 1)), frameMs));
+            }
+            FlameShot s;
+            if (fx.HasAngle() && !choices.empty() && plan.action != FlameParams::Action::Preset) {
+                int pos = choices[(size_t)(rng.Unit() * choices.size()) % choices.size()];
+                s.startDeg = s.endDeg = model->ClampAngle(fx.PositionDeg(pos));
+            } else {
+                ShotAngles a = AnglesForShot(p, model, i, plan.preset);
+                s.startDeg = a.start;
+                s.endDeg = a.end;
+            }
+            s.fireStartMs = std::max(AlignUp((int)t, frameMs), i == 0 ? S : prevEnd + minGap);
+            s.fireEndMs = s.fireStartMs + shotLen;
+            if (s.fireEndMs > E) {
+                break;
+            }
+            int lead = AlignUp(travel(prevDeg, s.startDeg), frameMs);
+            int wanted = s.fireStartMs - lead;
+            s.leadStartMs = canMove ? std::max(wanted, i == 0 ? S : prevEnd) : s.fireStartMs;
+            s.late = canMove && lead > 0 && s.leadStartMs > wanted;
+            plan.shots.push_back(s);
+            prevEnd = s.fireEndMs;
+            prevDeg = s.endDeg;
+            t = s.fireEndMs + minGap + rng.Unit() * 2.0 * meanWait;
+        }
+        break;
+    }
     case FlameParams::Repeat::Marks: {
         std::vector<int> times;
         for (int m : marks) {
@@ -400,7 +467,7 @@ void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuff
             firing = true;
             presetActive = plan.preset != nullptr;
             if (plan.action == FlameParams::Action::Sweep) {
-                int span = (p.repeat == FlameParams::Repeat::Once) ? (cur->fireEndMs - cur->fireStartMs) : plan.shotLenMs;
+                int span = (p.repeat == FlameParams::Repeat::Once || p.repeat == FlameParams::Repeat::Random) ? (cur->fireEndMs - cur->fireStartMs) : plan.shotLenMs;
                 float f = span > 0 ? std::clamp((float)(t - cur->fireStartMs) / (float)span, 0.0f, 1.0f) : 1.0f;
                 deg = cur->startDeg + (cur->endDeg - cur->startDeg) * f;
             } else if (plan.action == FlameParams::Action::Shot && p.pattern.empty() && fx.HasAngle()) {
@@ -442,6 +509,8 @@ void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuff
             int ms = p.shotMs;
             if (p.repeat == FlameParams::Repeat::Once && !plan.shots.empty()) {
                 ms = plan.shots.front().fireEndMs - plan.shots.front().fireStartMs;
+            } else if (p.repeat == FlameParams::Repeat::Random && cur != nullptr) {
+                ms = cur->fireEndMs - cur->fireStartMs;
             }
             int steps = (ms + fx.durationMsPerStep - 1) / fx.durationMsPerStep;
             d = steps > fx.durationMax ? 0 : std::max(fx.durationMin, steps);
@@ -465,8 +534,21 @@ int FlameEffect::DrawEffectBackground(const Effect* e, int x1, int y1, int x2, i
     if (ctx == nullptr) {
         return 1;
     }
-    const DmxFlame* model = FlameModelFor(ctx->GetModel(el->GetModelName()));
-    if (model == nullptr) {
+    // One lane per flame unit: a single model gets the whole bar, a group
+    // gets a thin lane for each of its flame units.
+    std::vector<const DmxFlame*> units;
+    const Model* m = ctx->GetModel(el->GetModelName());
+    if (const DmxFlame* f = FlameModelFor(m)) {
+        units.push_back(f);
+    } else if (m != nullptr && m->GetDisplayAs() == DisplayAsType::ModelGroup) {
+        for (const Model* member : static_cast<const ModelGroup*>(m)->GetFlatModels(true, false)) {
+            if (const DmxFlame* f = FlameModelFor(member)) {
+                units.push_back(f);
+                if (units.size() >= 24) break;
+            }
+        }
+    }
+    if (units.empty()) {
         return 1;
     }
     int ft = se->GetFrameMS();
@@ -475,7 +557,6 @@ int FlameEffect::DrawEffectBackground(const Effect* e, int x1, int y1, int x2, i
     if (p.repeat == FlameParams::Repeat::Marks) {
         marks = CollectMarks(GetTiming(p.timingTrack, se), e->GetStartTimeMS(), e->GetEndTimeMS());
     }
-    FlamePlan plan = BuildPlan(p, model, e->GetStartTimeMS(), e->GetEndTimeMS(), ft, marks);
     double span = (double)(e->GetEndTimeMS() - e->GetStartTimeMS());
     if (span <= 0) {
         return 1;
@@ -496,24 +577,33 @@ int FlameEffect::DrawEffectBackground(const Effect* e, int x1, int y1, int x2, i
     leadLate.ApplyMask(colorMask);
     tick.ApplyMask(colorMask);
 
-    const float top = (float)y1 + 3.0f;
-    const float bot = (float)y2 - 3.0f;
-    for (const auto& s : plan.shots) {
-        float lx = xAt(s.leadStartMs);
-        float fx0 = xAt(s.fireStartMs);
-        float fx1 = xAt(s.fireEndMs);
-        if (fx0 > lx + 0.5f) {
-            // hatched band: the nozzle is moving, no flame yet
-            const xlColor& c = s.late ? leadLate : lead;
-            float stripe = 4.0f;
-            for (float x = lx; x < fx0; x += stripe * 2) {
-                bg.AddRectAsTriangles(x, top, std::min(x + stripe, fx0), bot, c);
+    const float laneTop = (float)y1 + 2.0f;
+    const float laneH = ((float)y2 - 2.0f - laneTop) / (float)units.size();
+    const bool single = units.size() == 1;
+    for (size_t u = 0; u < units.size(); ++u) {
+        FlamePlan plan = BuildPlan(p, units[u], e->GetStartTimeMS(), e->GetEndTimeMS(), ft, marks);
+        const float top = laneTop + laneH * u + (single ? 1.0f : 0.0f);
+        const float bot = top + laneH - (single ? 2.0f : 1.0f);
+        const float inset = single ? 2.0f : 0.0f;
+        for (const auto& s : plan.shots) {
+            float lx = xAt(s.leadStartMs);
+            float fx0 = xAt(s.fireStartMs);
+            float fx1 = xAt(s.fireEndMs);
+            if (fx0 > lx + 0.5f) {
+                // hatched band: the nozzle is moving, no flame yet
+                const xlColor& c = s.late ? leadLate : lead;
+                float stripe = 4.0f;
+                for (float x = lx; x < fx0; x += stripe * 2) {
+                    bg.AddRectAsTriangles(x, top, std::min(x + stripe, fx0), bot, c);
+                }
+            }
+            if (fx1 > fx0) {
+                bg.AddRectAsTriangles(fx0, top + inset, std::max(fx0 + 1.0f, fx1), bot - inset, s.cut ? burnCut : burn);
+            }
+            if (single) {
+                bg.AddRectAsTriangles(fx0, (float)y1 + 1.0f, fx0 + 2.0f, (float)y2 - 1.0f, tick);
             }
         }
-        if (fx1 > fx0) {
-            bg.AddRectAsTriangles(fx0, top + 2.0f, std::max(fx0 + 1.0f, fx1), bot - 2.0f, s.cut ? burnCut : burn);
-        }
-        bg.AddRectAsTriangles(fx0, (float)y1 + 1.0f, fx0 + 2.0f, (float)y2 - 1.0f, tick);
     }
     return 2;
 }

@@ -25,7 +25,7 @@ struct FlamePreset;
 // The user's choices on one Flame effect, read from its settings.
 struct FlameParams {
     enum class Action { Preset, Shot, Sweep };
-    enum class Repeat { Once, BackToBack, Marks };
+    enum class Repeat { Once, BackToBack, Marks, Random };
 
     Action action = Action::Preset;
     Repeat repeat = Repeat::Once;
@@ -35,6 +35,8 @@ struct FlameParams {
     int endAngleDeg = 0;
     std::vector<int> pattern; // angle positions, cycled per shot
     int shotMs = 500;
+    int shotMaxMs = 0;   // Random: shot length varies shotMs..shotMaxMs (0 = fixed)
+    double rate = 1.0;   // Random: average shots per second per unit
     int gapMs = 0;
     bool moveEarly = false;
     bool fitLength = true;

@@ -6,7 +6,11 @@
             "label": "Fire",
             "type": "enum",
             "controlType": "choice",
-            "options": ["Preset", "Shot", "Sweep"],
+            "options": [
+                "Preset",
+                "Shot",
+                "Sweep"
+            ],
             "default": "Preset",
             "description": "Preset fires one of the unit's built-in sequences. Shot fires a static flame at one angle for a set length. Sweep moves from a start angle to an end angle while firing."
         },
@@ -80,10 +84,15 @@
             "label": "Repeat",
             "type": "enum",
             "controlType": "choice",
-            "options": ["Once", "Back-to-back", "On timing marks"],
+            "options": [
+                "Once",
+                "Back-to-back",
+                "On timing marks",
+                "Random"
+            ],
             "default": "Once",
             "separator": true,
-            "description": "Once fires a single shot. Back-to-back fires again as soon as each shot ends, for as long as the effect lasts. On timing marks fires at every mark of a timing track inside the effect; a shot still burning when the next mark comes is cut short."
+            "description": "Once fires a single shot. Back-to-back fires again as soon as each shot ends, for as long as the effect lasts. On timing marks fires at every mark of a timing track inside the effect; a shot still burning when the next mark comes is cut short. Random fires scattered shots on each unit (on a group, every unit gets its own pattern), the same every render."
         },
         {
             "id": "Flame_TimingTrack",
@@ -102,17 +111,38 @@
             "type": "string",
             "controlType": "text",
             "default": "",
-            "description": "Angle positions to step through, one per shot, e.g. 1,8,15,8. Loops. Empty uses the single angle."
+            "description": "Angle positions to use, e.g. 1,8,15,8. Repeats step through them in order; Random picks one at random for each shot. Empty uses the single angle."
         },
         {
             "id": "Flame_GapMs",
-            "label": "Extra Gap ms",
+            "label": "Gap ms",
             "type": "int",
             "controlType": "spin",
             "default": 0,
             "min": 0,
             "max": 10000,
-            "description": "Extra wait between back-to-back shots. Fire always drops for at least one frame so the unit can fire again."
+            "description": "Back-to-back: extra wait between shots. Random: the shortest gap between one unit's shots. Fire always drops for at least one frame so the unit can fire again."
+        },
+        {
+            "id": "Flame_Rate",
+            "label": "Shots/sec",
+            "type": "float",
+            "controlType": "slider",
+            "default": 1.0,
+            "divisor": 10,
+            "min": 1,
+            "max": 200,
+            "description": "Random: average number of shots per second on each unit."
+        },
+        {
+            "id": "Flame_ShotMaxMs",
+            "label": "Shot Max ms",
+            "type": "int",
+            "controlType": "spin",
+            "default": 0,
+            "min": 0,
+            "max": 10000,
+            "description": "Random: shots vary in length between Shot Length and this. 0 keeps every shot at Shot Length."
         },
         {
             "id": "Flame_MoveEarly",
@@ -142,32 +172,80 @@
     ],
     "visibilityRules": [
         {
-            "when": { "property": "Flame_Action", "equals": "Preset" },
-            "enable": ["Flame_Preset"]
+            "when": {
+                "property": "Flame_Action",
+                "equals": "Preset"
+            },
+            "enable": [
+                "Flame_Preset"
+            ]
         },
         {
-            "when": { "property": "Flame_Action", "notEquals": "Preset" },
-            "show": ["Flame_Angle"]
+            "when": {
+                "property": "Flame_Action",
+                "notEquals": "Preset"
+            },
+            "show": [
+                "Flame_Angle"
+            ]
         },
         {
-            "when": { "property": "Flame_Action", "equals": "Sweep" },
-            "show": ["Flame_EndAngle"]
+            "when": {
+                "property": "Flame_Action",
+                "equals": "Sweep"
+            },
+            "show": [
+                "Flame_EndAngle"
+            ]
         },
         {
-            "when": { "property": "Flame_Repeat", "equals": "On timing marks" },
-            "show": ["Flame_TimingTrack"]
+            "when": {
+                "property": "Flame_Repeat",
+                "equals": "On timing marks"
+            },
+            "show": [
+                "Flame_TimingTrack"
+            ]
         },
         {
-            "when": { "property": "Flame_Repeat", "notEquals": "Once" },
-            "show": ["Flame_Pattern"]
+            "when": {
+                "property": "Flame_Repeat",
+                "notEquals": "Once"
+            },
+            "show": [
+                "Flame_Pattern"
+            ]
         },
         {
-            "when": { "property": "Flame_Repeat", "equals": "Back-to-back" },
-            "show": ["Flame_GapMs"]
+            "when": {
+                "property": "Flame_Repeat",
+                "oneOf": [
+                    "Back-to-back",
+                    "Random"
+                ]
+            },
+            "show": [
+                "Flame_GapMs"
+            ]
         },
         {
-            "when": { "property": "Flame_Repeat", "equals": "Once" },
-            "enable": ["Flame_FitLength"]
+            "when": {
+                "property": "Flame_Repeat",
+                "equals": "Once"
+            },
+            "enable": [
+                "Flame_FitLength"
+            ]
+        },
+        {
+            "when": {
+                "property": "Flame_Repeat",
+                "equals": "Random"
+            },
+            "show": [
+                "Flame_Rate",
+                "Flame_ShotMaxMs"
+            ]
         }
     ]
 }

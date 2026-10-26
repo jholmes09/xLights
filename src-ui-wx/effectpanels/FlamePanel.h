@@ -43,6 +43,7 @@ private:
     wxWindow* BuildInfo(wxWindow* parentWin, wxSizer* sizer);
 
     const DmxFlame* GetFlameModel() const;
+    int FlameUnitCount() const;
     FlameParams ReadParams() const;
     void RefreshForModel();
     void RebuildPresetPicker();

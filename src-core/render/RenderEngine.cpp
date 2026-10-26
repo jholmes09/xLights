@@ -794,6 +794,10 @@ public:
                             } else if (bt == DEFAULT) {
                                 if (grp != nullptr && grp->GetDefaultBufferStyle().compare(0, 9, PER_MODEL) == 0) {
                                     perModelEffects = true;
+                                } else if (layer->GetEffect(e)->GetEffectIndex() == EffectManager::eff_FLAME) {
+                                    // Flame effects drive each unit's own channels, so on a
+                                    // group they always render per model.
+                                    perModelEffects = true;
                                 }
                             }
                         }
@@ -1650,6 +1654,13 @@ public:
                 const Model* model = buffer->GetModel();
                 if (model != nullptr && model->GetDisplayAs() == DisplayAsType::DmxFlame && !AnyEffectAtFrame(el, frame)) {
                     static_cast<const DmxFlame*>(model)->WriteIdleValues(&((*seqData)[frame][0]), seqData->NumChannels());
+                } else if (model != nullptr && model->GetDisplayAs() == DisplayAsType::ModelGroup && !AnyEffectAtFrame(el, frame)) {
+                    // a group just went quiet: its zeros must not leave flame units off their idle values
+                    for (const Model* m : static_cast<const ModelGroup*>(model)->GetFlatModels(true, false)) {
+                        if (m != nullptr && m->GetDisplayAs() == DisplayAsType::DmxFlame) {
+                            static_cast<const DmxFlame*>(m)->WriteIdleValues(&((*seqData)[frame][0]), seqData->NumChannels());
+                        }
+                    }
                 }
             }
 
@@ -3462,6 +3473,13 @@ private:
             loadSettingsMap(el->GetEffectName(),
                             el,
                             settingsMap);
+            // Flame effects drive each unit's own channels: on a group, the
+            // Default buffer style means per model (see the row setup above).
+            if (el->GetEffectIndex() == EffectManager::eff_FLAME && buffer->GetModel() != nullptr &&
+                buffer->GetModel()->GetDisplayAs() == DisplayAsType::ModelGroup &&
+                settingsMap.Get("CHOICE_BufferStyle", "Default") == "Default") {
+                settingsMap["CHOICE_BufferStyle"] = "Per Model Default";
+            }
         }
         buffer->SetLayerSettings(layer, settingsMap, layerEnabled);
         if (el != nullptr) {

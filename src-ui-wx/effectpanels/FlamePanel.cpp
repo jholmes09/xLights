@@ -29,6 +29,7 @@
 #include "models/DMX/DmxFlame.h"
 #include "models/DMX/FlameFixture.h"
 #include "models/Model.h"
+#include "models/ModelGroup.h"
 #include "render/Effect.h"
 #include "render/SequenceElements.h"
 #include "xLightsApp.h"
@@ -75,7 +76,7 @@ FlamePanel::FlamePanel(wxWindow* parent, const nlohmann::json& metadata) :
     bindChoice("ID_CHOICE_Flame_Repeat", true);
     bindChoice("ID_CHOICE_Flame_TimingTrack", false);
 
-    for (const char* name : { "ID_SPINCTRL_Flame_Preset", "ID_SPINCTRL_Flame_ShotMs", "ID_SPINCTRL_Flame_GapMs" }) {
+    for (const char* name : { "ID_SPINCTRL_Flame_Preset", "ID_SPINCTRL_Flame_ShotMs", "ID_SPINCTRL_Flame_GapMs", "ID_SPINCTRL_Flame_ShotMaxMs" }) {
         if (auto* s = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName(name, this))) {
             s->Bind(wxEVT_SPINCTRL, [this](wxSpinEvent& e) {
                 OnUserChange();
@@ -116,7 +117,13 @@ FlamePanel::FlamePanel(wxWindow* parent, const nlohmann::json& metadata) :
     }
     // Text boxes also change when an effect's settings are loaded; only react
     // to typing.
-    for (const char* name : { "ID_TEXTCTRL_Flame_Pattern", "IDD_TEXTCTRL_Flame_Angle", "IDD_TEXTCTRL_Flame_EndAngle" }) {
+    if (auto* r = dynamic_cast<wxSlider*>(wxWindow::FindWindowByName("IDD_SLIDER_Flame_Rate", this))) {
+        r->Bind(wxEVT_SLIDER, [this](wxCommandEvent& e) {
+            UpdateInfo();
+            e.Skip();
+        });
+    }
+    for (const char* name : { "ID_TEXTCTRL_Flame_Pattern", "IDD_TEXTCTRL_Flame_Angle", "IDD_TEXTCTRL_Flame_EndAngle", "ID_TEXTCTRL_Flame_Rate" }) {
         if (auto* t = dynamic_cast<wxTextCtrl*>(wxWindow::FindWindowByName(name, this))) {
             t->Bind(wxEVT_TEXT, [this, t](wxCommandEvent& e) {
                 if (t->HasFocus()) {
@@ -196,7 +203,34 @@ const DmxFlame* FlamePanel::GetFlameModel() const {
     if (_modelName.empty()) return nullptr;
     xLightsFrame* frame = xLightsApp::GetFrame();
     if (frame == nullptr) return nullptr;
-    return FlameEffect::FlameModelFor(frame->AllModels[_modelName]);
+    Model* m = frame->AllModels[_modelName];
+    if (const DmxFlame* f = FlameEffect::FlameModelFor(m)) {
+        return f;
+    }
+    // on a group, the first flame unit stands in for presets and angles
+    if (m != nullptr && m->GetDisplayAs() == DisplayAsType::ModelGroup) {
+        for (const Model* member : static_cast<ModelGroup*>(m)->GetFlatModels(true, false)) {
+            if (const DmxFlame* f = FlameEffect::FlameModelFor(member)) {
+                return f;
+            }
+        }
+    }
+    return nullptr;
+}
+
+int FlamePanel::FlameUnitCount() const {
+    if (_modelName.empty()) return 0;
+    xLightsFrame* frame = xLightsApp::GetFrame();
+    if (frame == nullptr) return 0;
+    Model* m = frame->AllModels[_modelName];
+    if (FlameEffect::FlameModelFor(m) != nullptr) return 1;
+    int n = 0;
+    if (m != nullptr && m->GetDisplayAs() == DisplayAsType::ModelGroup) {
+        for (const Model* member : static_cast<ModelGroup*>(m)->GetFlatModels(true, false)) {
+            if (FlameEffect::FlameModelFor(member) != nullptr) ++n;
+        }
+    }
+    return n;
 }
 
 FlameParams FlamePanel::ReadParams() const {
@@ -230,6 +264,8 @@ FlameParams FlamePanel::ReadParams() const {
     m["E_TEXTCTRL_Flame_Pattern"] = text("ID_TEXTCTRL_Flame_Pattern");
     m["E_SPINCTRL_Flame_ShotMs"] = std::to_string(spin("ID_SPINCTRL_Flame_ShotMs", 500));
     m["E_SPINCTRL_Flame_GapMs"] = std::to_string(spin("ID_SPINCTRL_Flame_GapMs", 0));
+    m["E_SPINCTRL_Flame_ShotMaxMs"] = std::to_string(spin("ID_SPINCTRL_Flame_ShotMaxMs", 0));
+    m["E_TEXTCTRL_Flame_Rate"] = text("ID_TEXTCTRL_Flame_Rate");
     m["E_CHECKBOX_Flame_MoveEarly"] = check("ID_CHECKBOX_Flame_MoveEarly", false) ? "1" : "0";
     m["E_CHECKBOX_Flame_FitLength"] = check("ID_CHECKBOX_Flame_FitLength", true) ? "1" : "0";
     FlameParams p = FlameParams::FromSettings(m, "E_");
@@ -285,6 +321,7 @@ void FlamePanel::ValidateWindow() {
     if (_presetPicker) _presetPicker->Enable(presetAction);
     // positional shots: the user sets the length
     ShowProperty("Flame_ShotMs", !presetAction);
+    if (presetAction) ShowProperty("Flame_ShotMaxMs", false);
     if (_setEnd) _setEnd->Show(hasAngle && p.action == FlameParams::Action::Sweep);
     // quick length buttons only for a single shot; repeats use the number box
     const bool shotButtons = !presetAction && p.repeat == FlameParams::Repeat::Once;
@@ -611,6 +648,16 @@ void FlamePanel::UpdateInfo() {
         s = fx.HasAngle() ? wxString::Format(_("%s at %s."), len, Degrees(model->ClampAngle(p.angleDeg))) : len + ".";
     }
 
+    if (p.repeat == FlameParams::Repeat::Random) {
+        wxString len = preset ? wxString(_("preset length")) :
+            (p.shotMaxMs > p.shotMs ? wxString::Format("%s\u2013%s", Seconds(p.shotMs), Seconds(p.shotMaxMs)) : Seconds(p.shotMs));
+        s += " " + wxString::Format(_("Random: about %.1f shots/s per unit, %s each."), p.rate, len);
+    }
+    int units = FlameUnitCount();
+    if (units > 1) {
+        s += " " + wxString::Format(_("Group of %d flame units; each gets its own channels%s."), units,
+                                    p.repeat == FlameParams::Repeat::Random ? wxString(_(" and its own random pattern")) : wxString());
+    }
     int ft = mSequenceElements != nullptr ? mSequenceElements->GetFrameMS() : 25;
     int lead = CurrentLead();
     int fit = p.fitLength ? FlameEffect::FitLengthMs(p, model, ft) : 0;
