@@ -34,7 +34,8 @@ jobs:
 
   build:
     needs: check_for_commits
-    if: ${{ needs.check_for_commits.outputs.should_run == 'true' }}
+    # A hand-started run always builds; the schedule only builds after new commits.
+    if: ${{ github.event_name == 'workflow_dispatch' || needs.check_for_commits.outputs.should_run == 'true' }}
     runs-on: windows-2025-vs2026
     # Sign nightlies too, so opt-in beta testers don't hit a SmartScreen wall on
     # every build. Uses the `nightly` environment (no approval gate) for the OIDC
