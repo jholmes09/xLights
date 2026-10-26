@@ -232,7 +232,17 @@ FlameParams FlamePanel::ReadParams() const {
     m["E_SPINCTRL_Flame_GapMs"] = std::to_string(spin("ID_SPINCTRL_Flame_GapMs", 0));
     m["E_CHECKBOX_Flame_MoveEarly"] = check("ID_CHECKBOX_Flame_MoveEarly", false) ? "1" : "0";
     m["E_CHECKBOX_Flame_FitLength"] = check("ID_CHECKBOX_Flame_FitLength", true) ? "1" : "0";
-    return FlameParams::FromSettings(m, "E_");
+    FlameParams p = FlameParams::FromSettings(m, "E_");
+    // A saved "Preset" (the default) on a unit without presets, or "Sweep" on
+    // one that can't move, is really a positional shot, same as the render.
+    if (const DmxFlame* model = GetFlameModel()) {
+        const auto& fx = model->GetFixture();
+        if ((p.action == FlameParams::Action::Preset && !fx.HasPresets()) ||
+            (p.action == FlameParams::Action::Sweep && !fx.HasAngle())) {
+            p.action = FlameParams::Action::Shot;
+        }
+    }
+    return p;
 }
 
 void FlamePanel::ShowProperty(const std::string& id, bool show) {
@@ -521,6 +531,14 @@ void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
         Effect* eff = frame != nullptr ? frame->GetSelectedEffectForPanel() : nullptr;
         if (eff == nullptr || eff->GetEffectName() != "Flame") {
             return;
+        }
+        if (const DmxFlame* m = GetFlameModel(); m != nullptr && !m->GetFixture().HasPresets()) {
+            auto* action = dynamic_cast<wxChoice*>(wxWindow::FindWindowByName("ID_CHOICE_Flame_Action", this));
+            if (action != nullptr && action->GetStringSelection() == "Preset") {
+                action->SetStringSelection("Shot");
+                FireChangeEvent();
+                ValidateWindow();
+            }
         }
         // Selecting an effect never moves it: whatever lead it was saved with
         // is taken as already applied.
