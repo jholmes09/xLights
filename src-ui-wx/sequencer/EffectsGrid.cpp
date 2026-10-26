@@ -7514,7 +7514,9 @@ void EffectsGrid::DrawPlayMarker(xlGraphicsContext* ctx) const {
 int EffectsGrid::DrawEffectBackground(const Row_Information_Struct* ri, const Effect* e,
                                       int x1, int y1, int x2, int y2,
                                       xlVertexColorAccumulator* backgrounds) const {
-    if (e->GetPaletteSize() == 0) {
+    // Flame draws when it fires, not colours: always show it
+    const bool isFlame = e->GetEffectIndex() == EffectManager::eff_FLAME;
+    if (e->GetPaletteSize() == 0 && !isFlame) {
         // if there are no colors selected, none of the "backgrounds" make sense.  Don't draw
         // the background and instead make sure the icon is displayed to the user knows they
         // need to make some decisions about the colors to be used.
@@ -7716,7 +7718,7 @@ void EffectsGrid::DrawEffects(xlGraphicsContext* ctx) {
                 }
 
                 int drawIcon = 1;
-                if (mGridIconBackgrounds && (ri->nodeIndex == -1 || !mGridNodeValues)) {
+                if ((mGridIconBackgrounds || e->GetEffectIndex() == EffectManager::eff_FLAME) && (ri->nodeIndex == -1 || !mGridNodeValues)) {
                     drawIcon = DrawEffectBackground(ri, e, x3, y1, x4, y2, backgrounds);
                 }
                 if (mGridNodeValues && ri->nodeIndex != -1) {
