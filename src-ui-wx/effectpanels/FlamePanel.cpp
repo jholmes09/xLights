@@ -161,7 +161,12 @@ wxWindow* FlamePanel::BuildPresetPicker(wxWindow* parentWin, wxSizer* sizer) {
     // narrow: the full preset name is in the list, not the panel width
     _presetPicker->SetMinSize(wxSize(200, -1));
     _presetPicker->SetToolTip(_("Pick a preset by name. Its length is shown, and the bar fits it when Fit length is on."));
-    sizer->Add(_presetPicker, 1, wxALL | wxEXPAND, 2);
+    // full-width row: carries its own label
+    auto* row = new wxBoxSizer(wxHORIZONTAL);
+    _presetLabel = new wxStaticText(parentWin, wxID_ANY, _("Preset"));
+    row->Add(_presetLabel, 0, wxALL | wxALIGN_CENTER_VERTICAL, 2);
+    row->Add(_presetPicker, 1, wxALL | wxEXPAND, 2);
+    sizer->Add(row, 0, wxALL | wxEXPAND, 2);
     _presetPicker->Bind(wxEVT_CHOICE, [this](wxCommandEvent& e) {
         OnPresetPicked();
         e.Skip();
@@ -174,28 +179,29 @@ wxWindow* FlamePanel::BuildFanButtons(wxWindow* parentWin, wxSizer* sizer) {
     _fanContainer = sizer;
     _fanSizer = new wxBoxSizer(wxVERTICAL);
     _fanGrid = new wxGridSizer(0, 5, 2, 2);
-    _fanSizer->Add(_fanGrid, 0, wxALL, 0);
+    _fanSizer->Add(new wxStaticText(parentWin, wxID_ANY, _("Angle positions")), 0, wxLEFT | wxTOP, 3);
+    _fanSizer->Add(_fanGrid, 0, wxALL, 2);
     auto* opts = new wxBoxSizer(wxVERTICAL);
     _setEnd = new wxCheckBox(parentWin, wxNewId(), _("Buttons set end"), wxDefaultPosition, wxDefaultSize, 0,
                              wxDefaultValidator, _T("IDD_CHECKBOX_Flame_SetEnd"));
     opts->Add(_setEnd, 0, wxALL, 3);
     _fanSizer->Add(opts, 0, wxALL, 0);
-    sizer->Add(_fanSizer, 1, wxALL | wxEXPAND, 2);
+    sizer->Add(_fanSizer, 0, wxALL | wxEXPAND, 2);
     return _setEnd;
 }
 
 wxWindow* FlamePanel::BuildShotButtons(wxWindow* parentWin, wxSizer* sizer) {
     _rowParent = parentWin;
     _shotContainer = sizer;
-    _shotSizer = new wxGridSizer(0, 2, 2, 2);
-    sizer->Add(_shotSizer, 1, wxALL | wxEXPAND, 2);
+    _shotSizer = new wxGridSizer(0, 4, 2, 2);
+    sizer->Add(_shotSizer, 0, wxALL, 4);
     return nullptr;
 }
 
 wxWindow* FlamePanel::BuildInfo(wxWindow* parentWin, wxSizer* sizer) {
     _info = new wxStaticText(parentWin, wxID_ANY, wxEmptyString, wxDefaultPosition, wxDefaultSize, 0,
                              _T("IDD_STATICTEXT_Flame_Info"));
-    sizer->Add(_info, 1, wxALL | wxEXPAND, 3);
+    sizer->Add(_info, 0, wxALL | wxEXPAND, 5);
     return _info;
 }
 
@@ -314,11 +320,12 @@ void FlamePanel::ValidateWindow() {
     if (!hasPresets) {
         ShowProperty("Flame_Preset", false);
         if (_presetPicker) _presetPicker->Show(false);
-        if (wxWindow* l = wxWindow::FindWindowByName("ID_STATICTEXT_Flame_PresetPicker", this)) l->Show(false);
+        if (_presetLabel) _presetLabel->Show(false);
     }
     if (_fanContainer && _fanSizer) _fanContainer->Show(_fanSizer, hasAngle, true);
     if (wxWindow* l = wxWindow::FindWindowByName("ID_STATICTEXT_Flame_FanButtons", this)) l->Show(hasAngle);
     if (_presetPicker) _presetPicker->Enable(presetAction);
+    if (_presetLabel) _presetLabel->Enable(presetAction);
     // positional shots: the user sets the length
     ShowProperty("Flame_ShotMs", !presetAction);
     if (presetAction) ShowProperty("Flame_ShotMaxMs", false);
@@ -648,6 +655,9 @@ void FlamePanel::UpdateInfo() {
         s = fx.HasAngle() ? wxString::Format(_("%s at %s."), len, Degrees(model->ClampAngle(p.angleDeg))) : len + ".";
     }
 
+    if (p.repeat == FlameParams::Repeat::Marks && p.timingTrack.empty()) {
+        s += " " + wxString(_("Pick a timing track: nothing fires until you do."));
+    }
     if (p.repeat == FlameParams::Repeat::Random) {
         wxString len = preset ? wxString(_("preset length")) :
             (p.shotMaxMs > p.shotMs ? wxString::Format("%s\u2013%s", Seconds(p.shotMs), Seconds(p.shotMaxMs)) : Seconds(p.shotMs));

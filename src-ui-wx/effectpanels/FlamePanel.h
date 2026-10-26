@@ -66,6 +66,7 @@ private:
 
     std::string _modelName;
     wxChoice* _presetPicker = nullptr;
+    wxStaticText* _presetLabel = nullptr;
     std::vector<int> _presetPickerNumbers;
     wxCheckBox* _setEnd = nullptr;
     // Button rows are built straight into the panel's own sizers (a nested

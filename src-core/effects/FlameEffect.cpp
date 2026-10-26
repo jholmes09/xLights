@@ -485,6 +485,9 @@ void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuff
         }
     } else if (!plan.shots.empty()) {
         deg = plan.shots.front().startDeg;
+    } else if (fx.HasAngle() && plan.action != FlameParams::Action::Preset) {
+        // nothing to fire (e.g. no timing marks yet): still aim where the user set it
+        deg = !p.pattern.empty() ? model->ClampAngle(fx.PositionDeg(p.pattern.front())) : model->ClampAngle((float)p.angleDeg);
     }
 
     auto put = [&buffer, &fx](int ch, int value) {
