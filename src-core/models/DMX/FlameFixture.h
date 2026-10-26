@@ -68,6 +68,10 @@ struct FlameFixture {
     int durationMsPerStep = 10;
     int durationMin = 1;
     int durationMax = 254;
+    // Send the shot length on the duration channel as a stop-by-itself
+    // backstop. Off by default: on the Showven a timed shot appears to hold
+    // the nozzle still, and the proven way is duration 0 with fire held.
+    bool durationBackstop = false;
 
     int presetChannel = 0;
     int presetNone = 0;

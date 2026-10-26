@@ -236,7 +236,9 @@ namespace {
         }
         f.travelMs = { 0, 50, 70, 90, 110, 130, 150, 170 };
         f.speedChannel = 2;
-        f.speedMax = 0;
+        // Manual: 0 and 255 are both max speed; Jeff's working 2024 tilt
+        // sweeps all used 255, so that's what's sent.
+        f.speedMax = 255;
         f.durationChannel = 4;
         f.durationMsPerStep = 10;
         f.durationMin = 1;
@@ -461,6 +463,8 @@ namespace FlameFixtures {
             GetInt(*dur, "msPerStep", f.durationMsPerStep);
             GetInt(*dur, "min", f.durationMin);
             GetInt(*dur, "max", f.durationMax);
+            auto bs = dur->find("backstop");
+            f.durationBackstop = bs != dur->end() && bs->is_boolean() && bs->get<bool>();
             if (!chanOk(f.durationChannel) || f.durationMsPerStep <= 0) {
                 error = "\"duration\" block is invalid";
                 return false;

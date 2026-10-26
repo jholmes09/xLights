@@ -540,7 +540,7 @@ void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuff
     }
     if (fx.HasDuration()) {
         int d = 0;
-        if (plan.action == FlameParams::Action::Shot) {
+        if (fx.durationBackstop && plan.action == FlameParams::Action::Shot) {
             int ms = p.shotMs;
             if (p.repeat == FlameParams::Repeat::Once && !plan.shots.empty()) {
                 ms = plan.shots.front().fireEndMs - plan.shots.front().fireStartMs;
