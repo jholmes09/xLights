@@ -62,6 +62,7 @@ private:
 
     void SetAngleSlider(const char* id, int deg);
     int CurrentLead() const;
+    int SavedLead() const;
     void RelayoutRows();
 
     std::string _modelName;
@@ -81,9 +82,10 @@ private:
     std::vector<wxButton*> _shotButtons;
     wxStaticText* _info = nullptr;
     std::string _note;
-    // "Move early" lead the effect's start already includes, worked out when
-    // the effect was loaded; only user edits shift the effect.
-    int _cachedLead = 0;
+    // Lead the effect had before the current edit (from its saved settings),
+    // so an edit shifts the start by exactly the change in lead.
+    int _pendingOldLead = -1;
+    bool _loading = false;
 
     bool _applyPending = false;
     bool _selfResizing = false;

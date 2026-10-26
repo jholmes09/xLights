@@ -341,7 +341,7 @@ void FlamePanel::ValidateWindow() {
 
 void FlamePanel::SetDefaultParameters() {
     JsonEffectPanel::SetDefaultParameters();
-    _cachedLead = 0;
+    _pendingOldLead = -1;
     if (_setEnd) _setEnd->SetValue(false);
     _note.clear();
     RefreshForModel();
@@ -507,9 +507,33 @@ int FlamePanel::CurrentLead() const {
 }
 
 void FlamePanel::OnUserChange() {
+    if (_loading) {
+        // the selected effect's settings are being loaded into the panel
+        return;
+    }
+    if (_pendingOldLead < 0) {
+        // the effect's saved settings still describe it before this edit
+        _pendingOldLead = SavedLead();
+    }
     _note.clear();
     UpdateInfo();
     ScheduleApplyLength();
+}
+
+int FlamePanel::SavedLead() const {
+    xLightsFrame* frame = xLightsApp::GetFrame();
+    Effect* eff = frame != nullptr ? frame->GetSelectedEffectForPanel() : nullptr;
+    const DmxFlame* model = GetFlameModel();
+    if (eff == nullptr || eff->GetEffectName() != "Flame" || model == nullptr) return 0;
+    FlameParams p = FlameParams::FromSettings(eff->GetSettings(), "E_");
+    const auto& fx = model->GetFixture();
+    if ((p.action == FlameParams::Action::Preset && !fx.HasPresets()) ||
+        (p.action == FlameParams::Action::Sweep && !fx.HasAngle())) {
+        p.action = FlameParams::Action::Shot;
+    }
+    if (!p.moveEarly || p.repeat == FlameParams::Repeat::Marks) return 0;
+    int ft = mSequenceElements != nullptr ? mSequenceElements->GetFrameMS() : 25;
+    return AlignUp(FlameEffect::FirstLeadMs(p, model), ft);
 }
 
 void FlamePanel::ScheduleApplyLength() {
@@ -537,7 +561,9 @@ void FlamePanel::ApplyLength() {
     int e0 = eff->GetEndTimeMS();
 
     // keep the moment the flame fires where it was
-    int s = std::max(0, s0 + _cachedLead - newLead);
+    int oldLead = _pendingOldLead >= 0 ? _pendingOldLead : newLead;
+    _pendingOldLead = -1;
+    int s = std::max(0, s0 + oldLead - newLead);
     int e = e0;
     int fit = p.fitLength ? FlameEffect::FitLengthMs(p, model, ft) : 0;
     if (fit > 0) {
@@ -557,10 +583,7 @@ void FlamePanel::ApplyLength() {
             _trackedEffect = eff;
             _trackedStart = eff->GetStartTimeMS();
             _trackedEnd = eff->GetEndTimeMS();
-            _cachedLead = newLead;
         }
-    } else {
-        _cachedLead = newLead;
     }
     UpdateInfo();
 }
@@ -569,8 +592,12 @@ void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
     if (startTimeMs == 0 && endTimeMs == 0) {
         return;
     }
-    // The effect's settings are loaded into the controls after this call.
+    // The effect's settings are loaded into the controls right after this
+    // call; control events during that load are not user edits.
+    _loading = true;
+    _pendingOldLead = -1;
     CallAfter([this, startTimeMs, endTimeMs]() {
+        _loading = false;
         xLightsFrame* frame = xLightsApp::GetFrame();
         Effect* eff = frame != nullptr ? frame->GetSelectedEffectForPanel() : nullptr;
         if (eff == nullptr || eff->GetEffectName() != "Flame") {
@@ -584,9 +611,6 @@ void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
                 ValidateWindow();
             }
         }
-        // Selecting an effect never moves it: whatever lead it was saved with
-        // is taken as already applied.
-        _cachedLead = CurrentLead();
 
         FlameParams p = ReadParams();
         const DmxFlame* model = GetFlameModel();
@@ -612,7 +636,7 @@ void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
         }
         if (p.action != FlameParams::Action::Preset && p.repeat == FlameParams::Repeat::Once) {
             if (auto* sp = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("ID_SPINCTRL_Flame_ShotMs", this))) {
-                int ms = std::max(sp->GetMin(), eff->GetEndTimeMS() - eff->GetStartTimeMS() - _cachedLead);
+                int ms = std::max(sp->GetMin(), eff->GetEndTimeMS() - eff->GetStartTimeMS() - CurrentLead());
                 if (sp->GetValue() != ms) {
                     sp->SetValue(std::min(ms, sp->GetMax()));
                     FireChangeEvent();
