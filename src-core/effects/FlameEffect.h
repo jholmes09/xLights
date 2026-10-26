@@ -54,6 +54,7 @@ struct FlameShot {
     int fireEndMs = 0;
     float startDeg = 0.0f;
     float endDeg = 0.0f;
+    int travelMs = 0;  // nozzle travel needed before this shot
     bool late = false; // not enough room to finish moving before firing
     bool cut = false;  // stopped early (next timing mark or end of effect)
 };

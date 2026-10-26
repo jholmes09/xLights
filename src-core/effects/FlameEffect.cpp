@@ -264,6 +264,8 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
     plan.shotLenMs = lenAligned;
     const bool canMove = p.moveEarly && fx.HasAngle();
     auto travel = [&](float from, float to) { return canMove ? fx.TravelMs(from, to) : 0; };
+    // real travel time, used to aim ahead and to flag shots the nozzle can't reach in time
+    auto realTravel = [&](float from, float to) { return fx.HasAngle() ? AlignUp(fx.TravelMs(from, to), frameMs) : 0; };
 
     float prevDeg = IdleDeg(model);
     switch (p.repeat) {
@@ -273,6 +275,7 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
         int lead = AlignUp(travel(prevDeg, a.start), frameMs);
         s.leadStartMs = S;
         s.fireStartMs = std::min(E, S + lead);
+        s.travelMs = lead;
         if (plan.action != FlameParams::Action::Preset) {
             s.fireEndMs = E;
         } else {
@@ -301,11 +304,11 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
                 // the unit needs at least one frame with fire low to fire again
                 int wait = std::max({ frameMs, AlignUp(p.gapMs, frameMs), lead });
                 s.fireStartMs = prevEnd + wait;
-                s.leadStartMs = canMove ? prevEnd : s.fireStartMs;
+                // aim at this shot as soon as the last one ends
+                s.leadStartMs = prevEnd;
             }
-            if (!canMove) {
-                s.leadStartMs = s.fireStartMs;
-            }
+            s.travelMs = realTravel(prevDeg, a.start);
+            s.late = s.travelMs > s.fireStartMs - s.leadStartMs;
             s.fireEndMs = s.fireStartMs + lenAligned;
             if (s.fireStartMs >= E) break;
             if (s.fireEndMs > E) {
@@ -349,10 +352,10 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
             if (s.fireEndMs > E) {
                 break;
             }
-            int lead = AlignUp(travel(prevDeg, s.startDeg), frameMs);
-            int wanted = s.fireStartMs - lead;
-            s.leadStartMs = canMove ? std::max(wanted, i == 0 ? S : prevEnd) : s.fireStartMs;
-            s.late = canMove && lead > 0 && s.leadStartMs > wanted;
+            // aim at this shot as soon as the last one ends
+            s.leadStartMs = i == 0 ? S : prevEnd;
+            s.travelMs = realTravel(prevDeg, s.startDeg);
+            s.late = s.travelMs > s.fireStartMs - s.leadStartMs;
             plan.shots.push_back(s);
             prevEnd = s.fireEndMs;
             prevDeg = s.endDeg;
@@ -383,10 +386,10 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
             }
             s.fireEndMs = std::min(s.fireStartMs + lenAligned, limit);
             s.cut = s.fireEndMs < s.fireStartMs + lenAligned;
-            int lead = AlignUp(travel(prevDeg, a.start), frameMs);
-            int wanted = s.fireStartMs - lead;
-            s.leadStartMs = canMove ? std::max(wanted, prevEnd) : s.fireStartMs;
-            s.late = canMove && lead > 0 && s.leadStartMs > wanted;
+            // aim at this shot as soon as the last one ends
+            s.leadStartMs = i == 0 ? S : prevEnd;
+            s.travelMs = realTravel(prevDeg, a.start);
+            s.late = s.travelMs > s.fireStartMs - s.leadStartMs;
             if (s.fireEndMs <= s.fireStartMs) {
                 continue;
             }
@@ -589,7 +592,7 @@ int FlameEffect::DrawEffectBackground(const Effect* e, int x1, int y1, int x2, i
         const float bot = top + laneH - (single ? 2.0f : 1.0f);
         const float inset = single ? 2.0f : 0.0f;
         for (const auto& s : plan.shots) {
-            float lx = xAt(s.leadStartMs);
+            float lx = xAt(std::max(s.leadStartMs, s.fireStartMs - std::max(s.travelMs, 0)));
             float fx0 = xAt(s.fireStartMs);
             float fx1 = xAt(s.fireEndMs);
             if (fx0 > lx + 0.5f) {
