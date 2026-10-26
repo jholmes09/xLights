@@ -32,6 +32,7 @@
 #include "../render/RenderBuffer.h"
 #include "../render/RenderContext.h"
 #include "../render/SequenceElements.h"
+#include "../render/ValueCurve.h"
 #include "UtilClasses.h"
 #include "UtilFunctions.h"
 
@@ -96,6 +97,7 @@ FlameParams FlameParams::FromSettings(const SettingsMap& s, const std::string& p
     p.angleDeg = std::clamp(s.GetInt(prefix + "SLIDER_Flame_Angle", 0), FLAME_ANGLE_MIN, FLAME_ANGLE_MAX);
     p.endAngleDeg = std::clamp(s.GetInt(prefix + "SLIDER_Flame_EndAngle", 0), FLAME_ANGLE_MIN, FLAME_ANGLE_MAX);
     p.pattern = ParsePattern(s.Get(prefix + "TEXTCTRL_Flame_Pattern", ""));
+    p.angleCurve = s.Get(prefix + "VALUECURVE_Flame_Angle", "");
     p.shotMs = std::max(10, s.GetInt(prefix + "SPINCTRL_Flame_ShotMs", 500));
     p.gapMs = std::max(0, s.GetInt(prefix + "SPINCTRL_Flame_GapMs", 0));
     p.shotMaxMs = std::max(0, s.GetInt(prefix + "SPINCTRL_Flame_ShotMaxMs", 0));
@@ -166,13 +168,34 @@ namespace {
         float end = 0.0f;
     };
 
+    // The angle slider's value curve, read once per plan. Repeated shots each
+    // take the curve's value at their own fire time and hold it.
+    struct AngleCurve {
+        ValueCurve vc;
+        bool active = false;
+        int startMs = 0;
+        int endMs = 1;
+        AngleCurve(const std::string& text, int s, int e) : startMs(s), endMs(std::max(e, s + 1)) {
+            if (!text.empty()) {
+                vc.SetLimits(FLAME_ANGLE_MIN, FLAME_ANGLE_MAX);
+                vc.SetDivisor(1);
+                vc.Deserialise(text);
+                active = vc.IsActive();
+            }
+        }
+        float At(int ms) {
+            float offset = std::clamp((float)(ms - startMs) / (float)(endMs - startMs), 0.0f, 1.0f);
+            return vc.GetOutputValueAt(offset, startMs, endMs);
+        }
+    };
+
     FlameParams::Action EffectiveAction(const FlameParams& p, const FlameFixture& fx) {
         if (p.action == FlameParams::Action::Preset && !fx.HasPresets()) return FlameParams::Action::Shot;
         if (p.action == FlameParams::Action::Sweep && !fx.HasAngle()) return FlameParams::Action::Shot;
         return p.action;
     }
 
-    ShotAngles AnglesForShot(const FlameParams& p, const DmxFlame* model, int index, const FlamePreset* preset) {
+    ShotAngles AnglesForShot(const FlameParams& p, const DmxFlame* model, int index, const FlamePreset* preset, AngleCurve* curve = nullptr, int atMs = 0) {
         ShotAngles a;
         if (model == nullptr) return a;
         const auto& fx = model->GetFixture();
@@ -188,6 +211,8 @@ namespace {
             if (!p.pattern.empty()) {
                 int pos = p.pattern[index % p.pattern.size()];
                 a.start = a.end = fx.PositionDeg(pos);
+            } else if (curve != nullptr && curve->active) {
+                a.start = a.end = curve->At(atMs);
             } else {
                 a.start = a.end = (float)p.angleDeg;
             }
@@ -268,6 +293,7 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
     auto realTravel = [&](float from, float to) { return fx.HasAngle() ? AlignUp(fx.TravelMs(from, to), frameMs) : 0; };
 
     float prevDeg = IdleDeg(model);
+    AngleCurve curve(p.angleCurve, S, E);
     switch (p.repeat) {
     case FlameParams::Repeat::Once: {
         ShotAngles a = AnglesForShot(p, model, 0, plan.preset);
@@ -292,7 +318,8 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
     case FlameParams::Repeat::BackToBack: {
         int prevEnd = S;
         for (int i = 0; i < 100000; ++i) {
-            ShotAngles a = AnglesForShot(p, model, i, plan.preset);
+            int estimate = i == 0 ? S : prevEnd + std::max(frameMs, AlignUp(p.gapMs, frameMs));
+            ShotAngles a = AnglesForShot(p, model, i, plan.preset, &curve, estimate);
             int lead = AlignUp(travel(prevDeg, a.start), frameMs);
             FlameShot s;
             s.startDeg = a.start;
@@ -339,15 +366,15 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
                 shotLen = std::max(frameMs, AlignUp(len + (int)(rng.Unit() * (p.shotMaxMs - len + 1)), frameMs));
             }
             FlameShot s;
+            s.fireStartMs = std::max(AlignUp((int)t, frameMs), i == 0 ? S : prevEnd + minGap);
             if (fx.HasAngle() && !choices.empty() && plan.action != FlameParams::Action::Preset) {
                 int pos = choices[(size_t)(rng.Unit() * choices.size()) % choices.size()];
                 s.startDeg = s.endDeg = model->ClampAngle(fx.PositionDeg(pos));
             } else {
-                ShotAngles a = AnglesForShot(p, model, i, plan.preset);
+                ShotAngles a = AnglesForShot(p, model, i, plan.preset, &curve, s.fireStartMs);
                 s.startDeg = a.start;
                 s.endDeg = a.end;
             }
-            s.fireStartMs = std::max(AlignUp((int)t, frameMs), i == 0 ? S : prevEnd + minGap);
             s.fireEndMs = s.fireStartMs + shotLen;
             if (s.fireEndMs > E) {
                 break;
@@ -373,7 +400,7 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
         }
         int prevEnd = S;
         for (size_t i = 0; i < times.size(); ++i) {
-            ShotAngles a = AnglesForShot(p, model, (int)i, plan.preset);
+            ShotAngles a = AnglesForShot(p, model, (int)i, plan.preset, &curve, times[i]);
             FlameShot s;
             s.startDeg = a.start;
             s.endDeg = a.end;
@@ -473,7 +500,9 @@ void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuff
                 int span = (p.repeat == FlameParams::Repeat::Once || p.repeat == FlameParams::Repeat::Random) ? (cur->fireEndMs - cur->fireStartMs) : plan.shotLenMs;
                 float f = span > 0 ? std::clamp((float)(t - cur->fireStartMs) / (float)span, 0.0f, 1.0f) : 1.0f;
                 deg = cur->startDeg + (cur->endDeg - cur->startDeg) * f;
-            } else if (plan.action == FlameParams::Action::Shot && p.pattern.empty() && fx.HasAngle()) {
+            } else if (plan.action == FlameParams::Action::Shot && p.repeat == FlameParams::Repeat::Once && p.pattern.empty() && fx.HasAngle()) {
+                // a single continuous shot may sweep with the curve; repeated
+                // shots each hold the angle worked out in the plan
                 float pos = buffer.GetEffectTimeIntervalPosition();
                 deg = model->ClampAngle((float)GetValueCurveInt("Flame_Angle", p.angleDeg, settings, pos, FLAME_ANGLE_MIN, FLAME_ANGLE_MAX, buffer.GetStartTimeMS(), buffer.GetEndTimeMS()));
             } else {

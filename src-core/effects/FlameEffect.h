@@ -34,6 +34,7 @@ struct FlameParams {
     int angleDeg = 0;
     int endAngleDeg = 0;
     std::vector<int> pattern; // angle positions, cycled per shot
+    std::string angleCurve;   // value curve on the angle (serialised), if any
     int shotMs = 500;
     int shotMaxMs = 0;   // Random: shot length varies shotMs..shotMaxMs (0 = fixed)
     double rate = 1.0;   // Random: average shots per second per unit
