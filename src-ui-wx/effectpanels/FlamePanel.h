@@ -86,6 +86,7 @@ private:
     // so an edit shifts the start by exactly the change in lead.
     int _pendingOldLead = -1;
     bool _loading = false;
+    int _applyGen = 0;
 
     bool _applyPending = false;
     bool _selfResizing = false;

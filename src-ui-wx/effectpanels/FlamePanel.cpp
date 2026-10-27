@@ -340,7 +340,12 @@ void FlamePanel::ValidateWindow() {
 }
 
 void FlamePanel::SetDefaultParameters() {
+    // Selecting an effect resets the panel to defaults before loading its
+    // settings; the reset fires control events that are not user edits.
+    const bool wasLoading = _loading;
+    _loading = true;
     JsonEffectPanel::SetDefaultParameters();
+    _loading = wasLoading;
     _pendingOldLead = -1;
     if (_setEnd) _setEnd->SetValue(false);
     _note.clear();
@@ -539,14 +544,20 @@ int FlamePanel::SavedLead() const {
 void FlamePanel::ScheduleApplyLength() {
     if (_applyPending) return;
     _applyPending = true;
+    const int gen = _applyGen;
     // After the change has reached the effect's settings.
-    CallAfter([this]() {
+    CallAfter([this, gen]() {
         _applyPending = false;
+        if (gen != _applyGen || _loading) {
+            // a different effect was selected (or is loading) since the edit
+            return;
+        }
         ApplyLength();
     });
 }
 
 void FlamePanel::ApplyLength() {
+    if (_loading) return;
     xLightsFrame* frame = xLightsApp::GetFrame();
     if (frame == nullptr) return;
     Effect* eff = frame->GetSelectedEffectForPanel();
@@ -596,6 +607,7 @@ void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
     // call; control events during that load are not user edits.
     _loading = true;
     _pendingOldLead = -1;
+    ++_applyGen; // drop any resize queued before this selection
     CallAfter([this, startTimeMs, endTimeMs]() {
         _loading = false;
         xLightsFrame* frame = xLightsApp::GetFrame();
