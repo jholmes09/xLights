@@ -309,19 +309,20 @@ void FlamePanel::ValidateWindow() {
     FlameParams p = ReadParams();
     const bool presetAction = p.action == FlameParams::Action::Preset && hasPresets;
 
+    // Controls that depend on the unit are set both ways every time: the same
+    // panel serves G-Flames (no angle, no presets) and Showvens.
+    // Angle, end angle and pattern also follow the metadata's rules, which
+    // already ran above, so they are only forced off here.
     if (!hasAngle) {
-        for (const char* id : { "Flame_Angle", "Flame_EndAngle", "Flame_Pattern", "Flame_MoveEarly" }) {
+        for (const char* id : { "Flame_Angle", "Flame_EndAngle", "Flame_Pattern" }) {
             ShowProperty(id, false);
         }
     }
-    if (!hasAngle && !hasPresets) {
-        ShowProperty("Flame_Action", false);
-    }
-    if (!hasPresets) {
-        ShowProperty("Flame_Preset", false);
-        if (_presetPicker) _presetPicker->Show(false);
-        if (_presetLabel) _presetLabel->Show(false);
-    }
+    ShowProperty("Flame_MoveEarly", hasAngle);
+    ShowProperty("Flame_Action", hasAngle || hasPresets);
+    ShowProperty("Flame_Preset", hasPresets);
+    if (_presetPicker) _presetPicker->Show(hasPresets);
+    if (_presetLabel) _presetLabel->Show(hasPresets);
     if (_fanContainer && _fanSizer) _fanContainer->Show(_fanSizer, hasAngle, true);
     if (wxWindow* l = wxWindow::FindWindowByName("ID_STATICTEXT_Flame_FanButtons", this)) l->Show(hasAngle);
     if (_presetPicker) _presetPicker->Enable(presetAction);
