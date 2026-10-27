@@ -44,7 +44,7 @@
         },
         {
             "id": "Flame_Angle",
-            "label": "Angle °",
+            "label": "Angle \u00b0",
             "type": "int",
             "controlType": "slider",
             "default": 0,
@@ -55,7 +55,7 @@
         },
         {
             "id": "Flame_EndAngle",
-            "label": "End Angle °",
+            "label": "End Angle \u00b0",
             "type": "int",
             "controlType": "slider",
             "default": 0,
@@ -180,7 +180,7 @@
                 "property": "Flame_Action",
                 "equals": "Preset"
             },
-            "enable": [
+            "show": [
                 "Flame_Preset"
             ]
         },
@@ -237,7 +237,7 @@
                 "property": "Flame_Repeat",
                 "equals": "Once"
             },
-            "enable": [
+            "show": [
                 "Flame_FitLength"
             ]
         },

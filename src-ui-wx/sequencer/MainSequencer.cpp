@@ -2224,9 +2224,8 @@ void MainSequencer::SetEffectDuration(const std::string& effectType, const uint3
     }
 }
 
-bool MainSequencer::SetEffectTimes(const std::string& effectType, int startMS, int endMS, std::string& note, int& renderStart, int& renderEnd, std::string& modelName)
+bool MainSequencer::SetEffectTimes(Effect* eff, const std::string& effectType, int startMS, int endMS, std::string& note, int& renderStart, int& renderEnd, std::string& modelName)
 {
-    Effect* eff = GetSelectedEffect();
     if (eff == nullptr || eff->GetEffectName() != effectType) {
         return false;
     }

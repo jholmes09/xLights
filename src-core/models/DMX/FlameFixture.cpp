@@ -246,6 +246,7 @@ namespace {
         f.presetChannel = 5;
         f.presetNone = 0;
         f.idle = { { 1, 128 } };
+        f.maxBurnMs = 10000; // manual: "permanent fire (10s is limit)"
 
         auto add = [&f](int n, const std::string& group, FlamePathType path, std::vector<int> pos, bool isLong, int ms) {
             FlamePreset p;
@@ -323,6 +324,7 @@ namespace {
         f.fireThreshold = 229;
         f.rearmBelow = 15;
         f.shotPresetsMs = { 300, 500, 1000, 1500 };
+        f.maxBurnMs = 25000; // manual: 25 s maximum, then 2 minutes off
         return f;
     }
 
@@ -509,6 +511,35 @@ namespace FlameFixtures {
             }
         }
         f.shotPresetsMs = GetIntArray(j, "shotPresetsMs");
+        GetInt(j, "maxBurnMs", f.maxBurnMs);
+        // reject definitions that could fire by themselves or never stop
+        if (f.fireOn < f.fireThreshold) {
+            error = "\"fire.on\" is below \"fire.threshold\", so the unit would never fire";
+            return false;
+        }
+        if (f.fireOff >= f.rearmBelow || f.fireOff >= f.fireThreshold) {
+            error = "\"fire.off\" must be below \"fire.rearmBelow\" and \"fire.threshold\"";
+            return false;
+        }
+        for (const auto& [ch, v] : f.idle) {
+            if (ch == f.fireChannel && v >= f.rearmBelow) {
+                error = "\"idle\" sets the fire channel to a firing value";
+                return false;
+            }
+        }
+        if (f.HasAngle() && f.IdleValue(f.angleChannel) == 0 && std::none_of(f.idle.begin(), f.idle.end(), [&](const auto& kv) { return kv.first == f.angleChannel; })) {
+            f.idle.emplace_back(f.angleChannel, f.centerValue); // park at center, not at the end stop
+        }
+        for (const auto& pr : f.presets) {
+            if (pr.value <= f.presetNone || pr.lengthMs <= 0) {
+                error = "preset " + std::to_string(pr.n) + " needs a \"value\" and a \"lengthMs\"";
+                return false;
+            }
+        }
+        if (f.angleChannel == f.fireChannel || (f.presetChannel > 0 && f.presetChannel == f.fireChannel)) {
+            error = "the fire channel can't also be the angle or preset channel";
+            return false;
+        }
         out = std::move(f);
         return true;
     }

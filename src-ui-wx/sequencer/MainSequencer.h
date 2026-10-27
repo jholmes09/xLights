@@ -80,7 +80,7 @@ class MainSequencer: public wxPanel
         // Moves/resizes the selected effect (if its name matches) with an undo
         // step. Clamped to its neighbours and the sequence; returns false if it
         // couldn't change. renderStart/renderEnd cover the old and new times.
-        bool SetEffectTimes(const std::string& effectType, int startMS, int endMS, std::string& note, int& renderStart, int& renderEnd, std::string& modelName);
+        bool SetEffectTimes(Effect* eff, const std::string& effectType, int startMS, int endMS, std::string& note, int& renderStart, int& renderEnd, std::string& modelName);
 
         void Cut();
         void Copy();

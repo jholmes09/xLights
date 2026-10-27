@@ -85,6 +85,11 @@ private:
     // Lead the effect had before the current edit (from its saved settings),
     // so an edit shifts the start by exactly the change in lead.
     int _pendingOldLead = -1;
+    // Lead and fire/repeat mode as of the last load or resize, the baseline
+    // for the next edit (the saved settings can already hold a slider's new value).
+    int _baseLead = -1;
+    int _baseShape = -1;
+    int Shape() const;
     bool _loading = false;
     int _applyGen = 0;
 

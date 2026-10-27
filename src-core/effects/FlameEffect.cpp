@@ -195,7 +195,15 @@ namespace {
         return p.action;
     }
 
-    ShotAngles AnglesForShot(const FlameParams& p, const DmxFlame* model, int index, const FlamePreset* preset, AngleCurve* curve = nullptr, int atMs = 0) {
+    float PosDeg(const FlameFixture& fx, int n) {
+        // positions outside the fixture's range snap to the nearest end
+        if (fx.PositionCount() == 0) return 0.0f;
+        return fx.PositionDeg(std::clamp(n, 1, fx.PositionCount()));
+    }
+
+    // atMs = when this shot fires; S/E = the effect's span (for Sweep hits).
+    ShotAngles AnglesForShot(const FlameParams& p, const DmxFlame* model, int index, const FlamePreset* preset,
+                             AngleCurve* curve = nullptr, int atMs = 0, int S = 0, int E = 1) {
         ShotAngles a;
         if (model == nullptr) return a;
         const auto& fx = model->GetFixture();
@@ -203,40 +211,54 @@ namespace {
         switch (EffectiveAction(p, fx)) {
         case FlameParams::Action::Preset:
             if (preset != nullptr && !preset->positions.empty()) {
-                a.start = fx.PositionDeg(preset->positions.front());
-                a.end = fx.PositionDeg(preset->positions.back());
+                a.start = PosDeg(fx, preset->positions.front());
+                a.end = PosDeg(fx, preset->positions.back());
             }
             return a;
         case FlameParams::Action::Shot:
-            // a single shot uses the slider; the pattern (hidden in Once) is for repeats
-            if (!p.pattern.empty() && p.repeat != FlameParams::Repeat::Once) {
-                int pos = p.pattern[index % p.pattern.size()];
-                a.start = a.end = fx.PositionDeg(pos);
-            } else if (curve != nullptr && curve->active) {
+            // An angle value curve wins; then the pattern (repeats only); then the slider.
+            if (curve != nullptr && curve->active) {
                 a.start = a.end = curve->At(atMs);
+            } else if (!p.pattern.empty() && p.repeat != FlameParams::Repeat::Once) {
+                a.start = a.end = PosDeg(fx, p.pattern[index % p.pattern.size()]);
             } else {
                 a.start = a.end = (float)p.angleDeg;
             }
             break;
         case FlameParams::Action::Sweep:
-            a.start = (float)p.angleDeg;
-            a.end = (float)p.endAngleDeg;
-            if (index % 2 == 1) std::swap(a.start, a.end); // back-to-back sweeps go back and forth
+            if (p.repeat == FlameParams::Repeat::Once) {
+                // one continuous flame moving from start to end
+                a.start = (float)p.angleDeg;
+                a.end = (float)p.endAngleDeg;
+            } else {
+                // a sweep of hits: each hit holds the angle that lies at its
+                // fire time on the line from start (effect start) to end (effect end)
+                float f = E > S ? std::clamp((float)(atMs - S) / (float)(E - S), 0.0f, 1.0f) : 0.0f;
+                a.start = a.end = (float)p.angleDeg + ((float)p.endAngleDeg - (float)p.angleDeg) * f;
+            }
             break;
         }
         a.start = model->ClampAngle(a.start);
         a.end = model->ClampAngle(a.end);
         return a;
     }
+
+    // Move early (or a single sweep, which always starts with the nozzle in place)
+    bool UsesLead(const FlameParams& p, const FlameFixture& fx) {
+        if (!fx.HasAngle()) return false;
+        if (p.repeat != FlameParams::Repeat::Once && p.repeat != FlameParams::Repeat::BackToBack) return false;
+        return p.moveEarly || (EffectiveAction(p, fx) == FlameParams::Action::Sweep && p.repeat == FlameParams::Repeat::Once);
+    }
 }
 
 int FlameEffect::FirstLeadMs(const FlameParams& p, const DmxFlame* model) {
-    if (!p.moveEarly || model == nullptr || !model->GetFixture().HasAngle()) {
+    if (model == nullptr || !UsesLead(p, model->GetFixture())) {
         return 0;
     }
     const auto& fx = model->GetFixture();
     const FlamePreset* preset = EffectiveAction(p, fx) == FlameParams::Action::Preset ? fx.FindPreset(p.preset) : nullptr;
-    ShotAngles a = AnglesForShot(p, model, 0, preset);
+    AngleCurve curve(p.angleCurve, 0, 1); // value at the effect's start
+    ShotAngles a = AnglesForShot(p, model, 0, preset, &curve, 0, 0, 1);
     return fx.TravelMs(IdleDeg(model), a.start);
 }
 
@@ -247,8 +269,12 @@ int FlameEffect::FitLengthMs(const FlameParams& p, const DmxFlame* model, int fr
     if (p.action != FlameParams::Action::Preset || !model->GetFixture().HasPresets()) {
         return 0; // a single shot or sweep lasts as long as the effect
     }
+    if (model->GetFixture().FindPreset(p.preset) == nullptr) {
+        return 0; // a preset the unit doesn't have: leave the bar alone
+    }
     int len = ShotLengthMs(p, model);
-    return AlignUp(FirstLeadMs(p, model), frameMs) + AlignUp(len, frameMs);
+    // + one frame: every Flame effect ends with fire off so the next can fire
+    return AlignUp(FirstLeadMs(p, model), frameMs) + AlignUp(len, frameMs) + frameMs;
 }
 
 std::vector<int> FlameEffect::CollectMarks(EffectLayer* timing, int startMs, int endMs) {
@@ -288,7 +314,10 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
     int len = plan.action == FlameParams::Action::Preset ? plan.preset->lengthMs : p.shotMs;
     int lenAligned = std::max(frameMs, AlignUp(len, frameMs));
     plan.shotLenMs = lenAligned;
-    const bool canMove = p.moveEarly && fx.HasAngle();
+    const bool canMove = UsesLead(p, fx);
+    // The effect's last frame always has fire off, so a Flame effect that
+    // starts right where this one ends can fire again.
+    const int Efire = (E - S > frameMs) ? E - frameMs : E;
     auto travel = [&](float from, float to) { return canMove ? fx.TravelMs(from, to) : 0; };
     // real travel time, used to aim ahead and to flag shots the nozzle can't reach in time
     auto realTravel = [&](float from, float to) { return fx.HasAngle() ? AlignUp(fx.TravelMs(from, to), frameMs) : 0; };
@@ -297,17 +326,18 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
     AngleCurve curve(p.angleCurve, S, E);
     switch (p.repeat) {
     case FlameParams::Repeat::Once: {
-        ShotAngles a = AnglesForShot(p, model, 0, plan.preset);
+        ShotAngles a = AnglesForShot(p, model, 0, plan.preset, &curve, S, S, E);
         FlameShot s;
         int lead = AlignUp(travel(prevDeg, a.start), frameMs);
         s.leadStartMs = S;
-        s.fireStartMs = std::min(E, S + lead);
-        s.travelMs = lead;
+        s.fireStartMs = std::min(Efire, S + lead);
+        s.travelMs = realTravel(prevDeg, a.start);
+        s.late = s.travelMs > s.fireStartMs - s.leadStartMs;
         if (plan.action != FlameParams::Action::Preset) {
-            s.fireEndMs = E;
+            s.fireEndMs = Efire;
         } else {
-            s.fireEndMs = std::min(E, s.fireStartMs + lenAligned);
-            s.cut = s.fireStartMs + lenAligned > E;
+            s.fireEndMs = std::min(Efire, s.fireStartMs + lenAligned);
+            s.cut = s.fireStartMs + lenAligned > Efire;
         }
         s.startDeg = a.start;
         s.endDeg = a.end;
@@ -320,7 +350,7 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
         int prevEnd = S;
         for (int i = 0; i < 100000; ++i) {
             int estimate = i == 0 ? S : prevEnd + std::max(frameMs, AlignUp(p.gapMs, frameMs));
-            ShotAngles a = AnglesForShot(p, model, i, plan.preset, &curve, estimate);
+            ShotAngles a = AnglesForShot(p, model, i, plan.preset, &curve, estimate, S, E);
             int lead = AlignUp(travel(prevDeg, a.start), frameMs);
             FlameShot s;
             s.startDeg = a.start;
@@ -338,10 +368,10 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
             s.travelMs = realTravel(prevDeg, a.start);
             s.late = s.travelMs > s.fireStartMs - s.leadStartMs;
             s.fireEndMs = s.fireStartMs + lenAligned;
-            if (s.fireStartMs >= E) break;
-            if (s.fireEndMs > E) {
+            if (s.fireStartMs >= Efire) break;
+            if (s.fireEndMs > Efire) {
                 if (i > 0) break; // a shot that wouldn't finish isn't started
-                s.fireEndMs = E;
+                s.fireEndMs = Efire;
                 s.cut = true;
             }
             plan.shots.push_back(s);
@@ -360,6 +390,8 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
         // first shot lands somewhere in the first interval so units don't start together
         double t = S + rng.Unit() * meanInterval;
         int prevEnd = S;
+        // random positions from the pattern, for plain shots without an angle curve
+        const bool useChoices = fx.HasAngle() && !p.pattern.empty() && plan.action == FlameParams::Action::Shot && !curve.active;
         const std::vector<int>& choices = p.pattern;
         for (int i = 0; i < 100000; ++i) {
             int shotLen = lenAligned;
@@ -368,16 +400,16 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
             }
             FlameShot s;
             s.fireStartMs = std::max(AlignUp((int)t, frameMs), i == 0 ? S : prevEnd + minGap);
-            if (fx.HasAngle() && !choices.empty() && plan.action != FlameParams::Action::Preset) {
+            if (useChoices) {
                 int pos = choices[(size_t)(rng.Unit() * choices.size()) % choices.size()];
-                s.startDeg = s.endDeg = model->ClampAngle(fx.PositionDeg(pos));
+                s.startDeg = s.endDeg = model->ClampAngle(PosDeg(fx, pos));
             } else {
-                ShotAngles a = AnglesForShot(p, model, i, plan.preset, &curve, s.fireStartMs);
+                ShotAngles a = AnglesForShot(p, model, i, plan.preset, &curve, s.fireStartMs, S, E);
                 s.startDeg = a.start;
                 s.endDeg = a.end;
             }
             s.fireEndMs = s.fireStartMs + shotLen;
-            if (s.fireEndMs > E) {
+            if (s.fireEndMs > Efire) {
                 break;
             }
             // aim at this shot as soon as the last one ends
@@ -401,12 +433,12 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
         }
         int prevEnd = S;
         for (size_t i = 0; i < times.size(); ++i) {
-            ShotAngles a = AnglesForShot(p, model, (int)i, plan.preset, &curve, times[i]);
+            ShotAngles a = AnglesForShot(p, model, (int)i, plan.preset, &curve, times[i], S, E);
             FlameShot s;
             s.startDeg = a.start;
             s.endDeg = a.end;
             s.fireStartMs = times[i];
-            int limit = E;
+            int limit = Efire;
             if (i + 1 < times.size()) {
                 // too-close marks: the running shot is cut one frame early so
                 // the next one fires on its mark
@@ -428,6 +460,22 @@ FlamePlan FlameEffect::BuildPlan(const FlameParams& p, const DmxFlame* model, in
         break;
     }
     }
+    if (plan.action == FlameParams::Action::Sweep && p.repeat != FlameParams::Repeat::Once && fx.HasAngle() &&
+        plan.shots.size() > 1) {
+        // a sweep of hits: first hit at the start angle, last at the end angle,
+        // evenly stepped between
+        const float a0 = model->ClampAngle((float)p.angleDeg);
+        const float a1 = model->ClampAngle((float)p.endAngleDeg);
+        const size_t n = plan.shots.size();
+        float prev = IdleDeg(model);
+        for (size_t i = 0; i < n; ++i) {
+            auto& sh = plan.shots[i];
+            sh.startDeg = sh.endDeg = a0 + (a1 - a0) * (float)i / (float)(n - 1);
+            sh.travelMs = realTravel(prev, sh.startDeg);
+            sh.late = sh.travelMs > sh.fireStartMs - sh.leadStartMs;
+            prev = sh.endDeg;
+        }
+    }
     return plan;
 }
 
@@ -439,31 +487,76 @@ void FlameEffect::RenameTimingTrack(std::string oldname, std::string newname, Ef
 
 std::list<std::string> FlameEffect::CheckEffectSettings(const SettingsMap& settings, AudioManager* media, Model* model, Effect* eff, bool renderCache) {
     std::list<std::string> res = RenderableEffect::CheckEffectSettings(settings, media, model, eff, renderCache);
-    const DmxFlame* flame = FlameModelFor(model);
-    if (flame == nullptr) {
-        if (model != nullptr && model->GetDisplayAs() != DisplayAsType::ModelGroup) {
-            res.push_back(fmt::format("    WARN: Flame effect on '{}', which is not a DMX Flame model. It does nothing. Start {}", model->GetFullName(), FORMATTIME(eff->GetStartTimeMS())));
+    if (model == nullptr || eff == nullptr) {
+        return res;
+    }
+    // the flame units this effect drives: the model itself, or a group's flame members
+    std::vector<const DmxFlame*> units;
+    if (const DmxFlame* f = FlameModelFor(model)) {
+        units.push_back(f);
+    } else if (model->GetDisplayAs() == DisplayAsType::ModelGroup) {
+        for (const Model* m : static_cast<const ModelGroup*>(model)->GetFlatModels(true, false)) {
+            if (const DmxFlame* f = FlameModelFor(m)) {
+                units.push_back(f);
+            }
         }
+    }
+    const std::string where = fmt::format("Model '{}', Start {}", model->GetFullName(), FORMATTIME(eff->GetStartTimeMS()));
+    if (units.empty()) {
+        res.push_back(fmt::format("    WARN: Flame effect on a model with no DMX Flame units. It does nothing. {}", where));
         return res;
     }
     FlameParams p = FlameParams::FromSettings(settings, "E_");
+    SequenceElements* se = eff->GetParentEffectLayer() != nullptr ? eff->GetParentEffectLayer()->GetParentElement()->GetSequenceElements() : nullptr;
+    std::vector<int> marks;
     if (p.repeat == FlameParams::Repeat::Marks) {
+        EffectLayer* timing = GetTiming(p.timingTrack, se);
         if (p.timingTrack.empty()) {
-            res.push_back(fmt::format("    ERR: Flame effect set to fire on timing marks but no timing track is chosen. Model '{}', Start {}", model->GetFullName(), FORMATTIME(eff->GetStartTimeMS())));
-        } else if (GetTiming(p.timingTrack, eff->GetParentEffectLayer()->GetParentElement()->GetSequenceElements()) == nullptr) {
-            res.push_back(fmt::format("    ERR: Flame effect uses unknown timing track '{}'. Model '{}', Start {}", p.timingTrack, model->GetFullName(), FORMATTIME(eff->GetStartTimeMS())));
+            res.push_back(fmt::format("    ERR: Flame effect set to fire on timing marks but no timing track is chosen. {}", where));
+        } else if (timing == nullptr) {
+            res.push_back(fmt::format("    ERR: Flame effect uses unknown timing track '{}'. {}", p.timingTrack, where));
+        } else {
+            marks = CollectMarks(timing, eff->GetStartTimeMS(), eff->GetEndTimeMS());
         }
     }
-    const auto& fx = flame->GetFixture();
-    if (p.action == FlameParams::Action::Preset && fx.HasPresets() && fx.FindPreset(p.preset) == nullptr) {
-        res.push_back(fmt::format("    ERR: Flame effect uses preset {}, which '{}' doesn't have. Model '{}', Start {}", p.preset, fx.name, model->GetFullName(), FORMATTIME(eff->GetStartTimeMS())));
+    const int ft = se != nullptr && se->GetFrameMS() > 0 ? se->GetFrameMS() : 25;
+    bool presetReported = false;
+    int late = 0;
+    int shots = 0;
+    std::string longBurn;
+    for (const DmxFlame* u : units) {
+        const auto& fx = u->GetFixture();
+        if (!u->FixtureLoaded()) {
+            res.push_back(fmt::format("    ERR: Flame unit '{}' has a custom fixture that didn't load, so it won't fire. {}", u->GetFullName(), where));
+            continue;
+        }
+        if (p.action == FlameParams::Action::Preset && fx.HasPresets() && fx.FindPreset(p.preset) == nullptr && !presetReported) {
+            res.push_back(fmt::format("    ERR: Flame effect uses preset {}, which '{}' doesn't have. {}", p.preset, fx.name, where));
+            presetReported = true;
+        }
+        FlamePlan plan = BuildPlan(p, u, eff->GetStartTimeMS(), eff->GetEndTimeMS(), ft, marks);
+        for (const auto& sh : plan.shots) {
+            ++shots;
+            if (sh.late) ++late;
+            if (fx.maxBurnMs > 0 && sh.fireEndMs - sh.fireStartMs > fx.maxBurnMs && longBurn.empty()) {
+                longBurn = fmt::format("    WARN: Flame effect holds fire on '{}' for {:.1f} s; the unit stops by itself after {:.0f} s. {}",
+                                       u->GetFullName(), (sh.fireEndMs - sh.fireStartMs) / 1000.0, fx.maxBurnMs / 1000.0, where);
+            }
+        }
+    }
+    if (!longBurn.empty()) {
+        res.push_back(longBurn);
+    }
+    if (late > 0) {
+        res.push_back(fmt::format("    WARN: {} of {} Flame shots fire before the nozzle can reach their angle (not enough time to move). {}", late, shots, where));
     }
     return res;
 }
 
 void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuffer& buffer) {
     const DmxFlame* model = FlameModelFor(buffer.GetModel());
-    if (model == nullptr) {
+    if (model == nullptr || !model->FixtureLoaded()) {
+        // never drive a unit whose definition didn't load
         return;
     }
     const auto& fx = model->GetFixture();
@@ -497,8 +590,9 @@ void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuff
         if (t >= cur->fireStartMs && t < cur->fireEndMs) {
             firing = true;
             presetActive = plan.preset != nullptr;
-            if (plan.action == FlameParams::Action::Sweep) {
-                int span = (p.repeat == FlameParams::Repeat::Once || p.repeat == FlameParams::Repeat::Random) ? (cur->fireEndMs - cur->fireStartMs) : plan.shotLenMs;
+            if (plan.action == FlameParams::Action::Sweep && p.repeat == FlameParams::Repeat::Once) {
+                // the last firing frame lands exactly on the end angle
+                int span = cur->fireEndMs - cur->fireStartMs - ft;
                 float f = span > 0 ? std::clamp((float)(t - cur->fireStartMs) / (float)span, 0.0f, 1.0f) : 1.0f;
                 deg = cur->startDeg + (cur->endDeg - cur->startDeg) * f;
             } else if (plan.action == FlameParams::Action::Shot && p.repeat == FlameParams::Repeat::Once && fx.HasAngle()) {
@@ -520,8 +614,8 @@ void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuff
         deg = plan.shots.front().startDeg;
     } else if (fx.HasAngle() && plan.action != FlameParams::Action::Preset) {
         // nothing to fire (e.g. no timing marks yet): still aim where the user set it
-        const bool usePattern = !p.pattern.empty() && p.repeat != FlameParams::Repeat::Once;
-        deg = usePattern ? model->ClampAngle(fx.PositionDeg(p.pattern.front())) : model->ClampAngle((float)p.angleDeg);
+        AngleCurve c(p.angleCurve, S, E);
+        deg = AnglesForShot(p, model, 0, nullptr, &c, S, S, E).start;
     }
 
     auto put = [&buffer, &fx](int ch, int value) {

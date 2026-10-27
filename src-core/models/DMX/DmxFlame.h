@@ -10,6 +10,8 @@
  * License: https://github.com/xLightsSequencer/xLights/blob/master/License.txt
  **************************************************************/
 
+#include <functional>
+
 #include "DmxModel.h"
 #include "FlameFixture.h"
 
@@ -27,6 +29,8 @@ public:
     void Accept(BaseObjectVisitor& visitor) const override { return visitor.Visit(*this); }
 
     [[nodiscard]] const FlameFixture& GetFixture() const;
+    // false when a custom fixture's definition didn't load: render nothing then
+    [[nodiscard]] bool FixtureLoaded() const;
     [[nodiscard]] const std::string& GetFixtureId() const { return _fixtureId; }
     void SetFixtureId(const std::string& id);
     [[nodiscard]] const std::string& GetCustomFile() const { return _customFile; }
@@ -51,6 +55,10 @@ public:
     // Writes the "nothing is happening" values (e.g. Showven nozzle straight up)
     // into one frame of channel data.
     void WriteIdleValues(unsigned char* frame, size_t numChannels) const;
+    // Idle values for every flame unit in the show, for frames no effect
+    // writes. inRange (optional) limits which channels may be touched.
+    static void WriteIdleValuesForAll(const ModelManager& models, unsigned char* frame, size_t numChannels,
+                                      const std::function<bool(size_t)>& inRange = nullptr);
 
     void SetPreviewFrameContext(const SequenceData* data, int frame) override;
 

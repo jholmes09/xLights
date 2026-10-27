@@ -79,6 +79,8 @@ struct FlameFixture {
 
     std::vector<std::pair<int, int>> idle;
     std::vector<int> shotPresetsMs;
+    // longest burn the unit allows on its own (0 = unknown)
+    int maxBurnMs = 0;
 
     [[nodiscard]] int ChannelCount() const { return (int)channels.size(); }
     [[nodiscard]] bool HasAngle() const { return angleChannel > 0 && maxDeg > minDeg; }

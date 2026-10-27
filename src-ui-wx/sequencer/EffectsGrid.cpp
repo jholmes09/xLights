@@ -4144,7 +4144,8 @@ void EffectsGrid::mouseReleased(wxMouseEvent& event) {
                         // exactly the case Link needs to react to (its end time, and therefore which
                         // effect is now "next", just changed).
                         if (event.ShiftDown() || mResizingMode == EFFECT_RESIZE_FADE_IN || mResizingMode == EFFECT_RESIZE_FADE_OUT ||
-                            effect->GetSettings().Get("E_CHECKBOX_MHLinkToNext", "") == "1") {
+                            effect->GetSettings().Get("E_CHECKBOX_MHLinkToNext", "") == "1" ||
+                            effect->GetEffectName() == "Flame") { // Flame's panel tracks the bar length
                             RaiseSelectedEffectChanged(effect, false);
                         }
                     }

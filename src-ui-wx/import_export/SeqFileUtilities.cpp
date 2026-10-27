@@ -10,6 +10,7 @@
 
 #include <wx/stopwatch.h>
 #include "settings/XLightsConfigAdapter.h"
+#include "models/DMX/DmxFlame.h"
 #include <wx/regex.h>
 #include <wx/tokenzr.h>
 #include <wx/wxcrt.h> // wxAtoi — MSVC needs it explicitly (macOS PCH masks the miss)
@@ -1064,8 +1065,11 @@ bool xLightsFrame::SeqLoadXlightsFile(SequenceFile& xml_file, pugi::xml_document
 void xLightsFrame::ClearSequenceData()
 {
     wxASSERT(_seqData.IsValidData());
-    for (size_t i = 0; i < _seqData.NumFrames(); ++i)
+    for (size_t i = 0; i < _seqData.NumFrames(); ++i) {
         _seqData[i].Zero();
+        // flame units idle at their safe values (Showven nozzle straight up), not 0
+        DmxFlame::WriteIdleValuesForAll(AllModels, &_seqData[i][0], _seqData.NumChannels());
+    }
 }
 
 void xLightsFrame::RenderIseqData(bool bottom_layers, ConvertLogDialog* plog)

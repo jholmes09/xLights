@@ -27,6 +27,7 @@
 #include "settings/XLightsConfigAdapter.h"
 #include <wx/textfile.h>
 
+#include "models/DMX/DmxFlame.h"
 #include "xLightsMain.h"
 #include "../../common/xlBaseApp.h"
 #include "shared/utils/wxUtilities.h"
@@ -2110,6 +2111,8 @@ void xLightsFrame::DoStopSequence()
     SetPlayStatus(PLAY_TYPE_STOPPED);
     if( CheckBoxLightOutput->IsChecked()) {
         _outputManager.AllOff();
+        // all-off would leave a Showven nozzle at its -105 degree end stop
+        SendFlameSafeFrame(true, playStartTime);
     }
 	SetAudioControls();
     AutoShowHouse();
@@ -2808,8 +2811,14 @@ bool xLightsFrame::TimerRgbSeq(long msec)
     // return if paused
     if (playType == PLAY_TYPE_EFFECT_PAUSED || playType == PLAY_TYPE_MODEL_PAUSED) {
         playStartMS = msec - playOffsetTime;  // maintain offset so we can restart where we paused
+        if (!_flameSafeSentForPause) {
+            // the last frame stays on the wire while paused: never leave a flame burning
+            SendFlameSafeFrame(false, msec);
+            _flameSafeSentForPause = true;
+        }
         return false;
     }
+    _flameSafeSentForPause = false;
 
     // return if we have reset play times
     if (playEndTime == 0) {
@@ -3241,7 +3250,7 @@ bool xLightsFrame::SetSelectedEffectTimes(const std::string& effectType, int sta
     int rs = 0;
     int re = 0;
     std::string model;
-    if (!mainSequencer->SetEffectTimes(effectType, startMS, endMS, note, rs, re, model)) {
+    if (!mainSequencer->SetEffectTimes(GetSelectedEffectForPanel(), effectType, startMS, endMS, note, rs, re, model)) {
         return false;
     }
     RenderEffectForModel(model, rs, re, true);
@@ -3250,6 +3259,9 @@ bool xLightsFrame::SetSelectedEffectTimes(const std::string& effectType, int sta
 
 Effect* xLightsFrame::GetSelectedEffectForPanel() const
 {
+    // the effect the panel shows; after a drop from the palette the grid's
+    // selection can still be the previous effect
+    if (selectedEffect != nullptr) return selectedEffect;
     return mainSequencer == nullptr ? nullptr : mainSequencer->GetSelectedEffect();
 }
 
@@ -4758,4 +4770,41 @@ void xLightsFrame::GenerateAILyrics(wxCommandEvent& /* command*/) {
         wxMessageBox("No media file associated with this sequence. Please add a media file and try again.", "Error", wxICON_ERROR);
     }
 
+}
+
+// Fire off on every DMX Flame unit (and, for a stop, their safe idle values),
+// sent straight to the outputs.
+void xLightsFrame::SendFlameSafeFrame(bool idle, long msec)
+{
+    if (!CheckBoxLightOutput->IsChecked() || !_outputManager.IsOutputting()) {
+        return;
+    }
+    bool any = false;
+    for (const auto& [name, m] : AllModels) {
+        if (m == nullptr || m->GetDisplayAs() != DisplayAsType::DmxFlame) {
+            continue;
+        }
+        const auto* flame = static_cast<const DmxFlame*>(m);
+        if (!flame->CouldComputeStartChannel || !flame->FixtureLoaded()) {
+            continue;
+        }
+        const auto& fx = flame->GetFixture();
+        if (!any) {
+            _outputManager.StartFrame(msec);
+            any = true;
+        }
+        if (fx.fireChannel >= 1 && fx.fireChannel <= (int)flame->GetNodeCount()) {
+            _outputManager.SetOneChannel(flame->NodeStartChannel(fx.fireChannel - 1), (unsigned char)fx.fireOff);
+        }
+        if (idle) {
+            for (const auto& [ch, value] : fx.idle) {
+                if (ch >= 1 && ch <= (int)flame->GetNodeCount()) {
+                    _outputManager.SetOneChannel(flame->NodeStartChannel(ch - 1), (unsigned char)value);
+                }
+            }
+        }
+    }
+    if (any) {
+        _outputManager.EndFrame();
+    }
 }

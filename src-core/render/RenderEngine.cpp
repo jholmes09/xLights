@@ -779,8 +779,14 @@ public:
                         EffectLayer *layer = row->GetEffectLayer(l);
                         bool perModelEffects = false;
                         bool perModelEffectsDeep = false;
-                        for (int e = 0; e < layer->GetEffectCount() && !perModelEffects; ++e) {
+                        for (int e = 0; e < layer->GetEffectCount() && !(perModelEffects && perModelEffectsDeep); ++e) {
                             static const std::string CHOICE_BufferStyle("B_CHOICE_BufferStyle");
+                            if (layer->GetEffect(e)->GetEffectIndex() == EffectManager::eff_FLAME) {
+                                // Flame effects drive each unit's own channels: on a group they
+                                // always render per unit, through nested groups too.
+                                perModelEffectsDeep = true;
+                                continue;
+                            }
                             static const std::string DEFAULT("Default");
                             static const std::string PER_MODEL("Per Model");
                             static const std::string DEEP("Deep");
@@ -793,10 +799,6 @@ public:
                                 }
                             } else if (bt == DEFAULT) {
                                 if (grp != nullptr && grp->GetDefaultBufferStyle().compare(0, 9, PER_MODEL) == 0) {
-                                    perModelEffects = true;
-                                } else if (layer->GetEffect(e)->GetEffectIndex() == EffectManager::eff_FLAME) {
-                                    // Flame effects drive each unit's own channels, so on a
-                                    // group they always render per model.
                                     perModelEffects = true;
                                 }
                             }
@@ -1652,12 +1654,14 @@ public:
             // (e.g. Showven nozzle straight up), not at all-zero.
             if (strand == -1 && info.submodel == -1) {
                 const Model* model = buffer->GetModel();
-                if (model != nullptr && model->GetDisplayAs() == DisplayAsType::DmxFlame && !AnyEffectAtFrame(el, frame)) {
+                if (model != nullptr && model->GetDisplayAs() == DisplayAsType::DmxFlame && !AnyEffectAtFrame(el, frame) &&
+                    !FlameUnitDrivenElsewhere(model, el, frame)) {
                     static_cast<const DmxFlame*>(model)->WriteIdleValues(&((*seqData)[frame][0]), seqData->NumChannels());
                 } else if (model != nullptr && model->GetDisplayAs() == DisplayAsType::ModelGroup && !AnyEffectAtFrame(el, frame)) {
-                    // a group just went quiet: its zeros must not leave flame units off their idle values
+                    // a group just went quiet: its zeros must not leave flame units off
+                    // their idle values, unless another row is still driving a unit
                     for (const Model* m : static_cast<const ModelGroup*>(model)->GetFlatModels(true, false)) {
-                        if (m != nullptr && m->GetDisplayAs() == DisplayAsType::DmxFlame) {
+                        if (m != nullptr && m->GetDisplayAs() == DisplayAsType::DmxFlame && !FlameUnitDrivenElsewhere(m, el, frame)) {
                             static_cast<const DmxFlame*>(m)->WriteIdleValues(&((*seqData)[frame][0]), seqData->NumChannels());
                         }
                     }
@@ -3473,12 +3477,11 @@ private:
             loadSettingsMap(el->GetEffectName(),
                             el,
                             settingsMap);
-            // Flame effects drive each unit's own channels: on a group, the
-            // Default buffer style means per model (see the row setup above).
+            // Flame effects drive each unit's own channels: on a group they always
+            // render per unit, whatever buffer style is set (see the row setup above).
             if (el->GetEffectIndex() == EffectManager::eff_FLAME && buffer->GetModel() != nullptr &&
-                buffer->GetModel()->GetDisplayAs() == DisplayAsType::ModelGroup &&
-                settingsMap.Get("CHOICE_BufferStyle", "Default") == "Default") {
-                settingsMap["CHOICE_BufferStyle"] = "Per Model Default";
+                buffer->GetModel()->GetDisplayAs() == DisplayAsType::ModelGroup) {
+                settingsMap["CHOICE_BufferStyle"] = "Per Model Default Deep";
             }
         }
         buffer->SetLayerSettings(layer, settingsMap, layerEnabled);
@@ -3507,6 +3510,28 @@ private:
         }
 
         return res;
+    }
+
+    // Is a flame unit being driven at this frame by a row other than `self`:
+    // its own row, or any group row that contains it? Only checked on the rare
+    // frame where a row goes quiet.
+    bool FlameUnitDrivenElsewhere(const Model* unit, Element* self, int frame) {
+        SequenceElements* se = self != nullptr ? self->GetSequenceElements() : nullptr;
+        if (se == nullptr) return false;
+        for (size_t i = 0; i < se->GetElementCount(); ++i) {
+            Element* other = se->GetElement(i);
+            if (other == nullptr || other == self || other->GetType() != ElementType::ELEMENT_TYPE_MODEL) continue;
+            const Model* m = _ctx->GetModel(other->GetModelName());
+            if (m == nullptr) continue;
+            bool covers = m == unit;
+            if (!covers && m->GetDisplayAs() == DisplayAsType::ModelGroup) {
+                for (const Model* member : static_cast<const ModelGroup*>(m)->GetFlatModels(true, false)) {
+                    if (member == unit) { covers = true; break; }
+                }
+            }
+            if (covers && AnyEffectAtFrame(other, frame)) return true;
+        }
+        return false;
     }
 
     bool AnyEffectAtFrame(Element* el, int frame) {
@@ -4303,14 +4328,19 @@ void RenderEngine::PerformRenderSetup(RenderSetupRequest& req) {
                 seqData[f].Zero(it.start, it.end - it.start + 1);
             }
         }
-        // Frames no effect touches keep these; flame units idle at their safe
-        // values (e.g. Showven nozzle straight up), not at all-zero.
-        for (const auto* m : restrictToModels.empty() ? models : restrictToModels) {
-            if (m != nullptr && m->GetDisplayAs() == DisplayAsType::DmxFlame) {
-                const auto* flame = static_cast<const DmxFlame*>(m);
-                for (int f = startFrame; f <= endFrame; f++) {
-                    flame->WriteIdleValues(&seqData[f][0], seqData.NumChannels());
+        // Frames no effect touches keep these: every flame unit in the show whose
+        // channels were just cleared idles at its safe values (e.g. Showven nozzle
+        // straight up), including units that only appear inside groups.
+        const Model* any = !models.empty() ? models.front() : (!restrictToModels.empty() ? restrictToModels.front() : nullptr);
+        if (any != nullptr) {
+            auto inRange = [&ranges](size_t ch) {
+                for (const auto& r : ranges) {
+                    if (ch >= r.start && ch <= r.end) return true;
                 }
+                return false;
+            };
+            for (int f = startFrame; f <= endFrame; f++) {
+                DmxFlame::WriteIdleValuesForAll(any->GetModelManager(), &seqData[f][0], seqData.NumChannels(), inRange);
             }
         }
     }

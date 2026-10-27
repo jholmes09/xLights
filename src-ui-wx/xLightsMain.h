@@ -1536,6 +1536,8 @@ public:
     // Used by effect panels that size their own effect (e.g. Flame presets).
     bool SetSelectedEffectTimes(const std::string& effectType, int startMS, int endMS, std::string& note);
     Effect* GetSelectedEffectForPanel() const;
+    void SendFlameSafeFrame(bool idle, long msec);
+    bool _flameSafeSentForPause = false;
     SequenceElements& GetPresetSequenceElements() { return _presetSequenceElements; }
 
 private:

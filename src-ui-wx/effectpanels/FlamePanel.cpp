@@ -518,7 +518,6 @@ int FlamePanel::CurrentLead() const {
     const DmxFlame* model = GetFlameModel();
     if (model == nullptr) return 0;
     FlameParams p = ReadParams();
-    if (!p.moveEarly || p.repeat == FlameParams::Repeat::Marks) return 0;
     int ft = mSequenceElements != nullptr ? mSequenceElements->GetFrameMS() : 25;
     return AlignUp(FlameEffect::FirstLeadMs(p, model), ft);
 }
@@ -529,8 +528,7 @@ void FlamePanel::OnUserChange() {
         return;
     }
     if (_pendingOldLead < 0) {
-        // the effect's saved settings still describe it before this edit
-        _pendingOldLead = SavedLead();
+        _pendingOldLead = _baseLead >= 0 ? _baseLead : SavedLead();
     }
     _note.clear();
     ValidateWindow(); // e.g. a pattern typed in changes what the angle slider does
@@ -548,7 +546,6 @@ int FlamePanel::SavedLead() const {
         (p.action == FlameParams::Action::Sweep && !fx.HasAngle())) {
         p.action = FlameParams::Action::Shot;
     }
-    if (!p.moveEarly || p.repeat == FlameParams::Repeat::Marks) return 0;
     int ft = mSequenceElements != nullptr ? mSequenceElements->GetFrameMS() : 25;
     return AlignUp(FlameEffect::FirstLeadMs(p, model), ft);
 }
@@ -559,11 +556,11 @@ void FlamePanel::ScheduleApplyLength() {
     const int gen = _applyGen;
     // After the change has reached the effect's settings.
     CallAfter([this, gen]() {
-        _applyPending = false;
         if (gen != _applyGen || _loading) {
             // a different effect was selected (or is loading) since the edit
             return;
         }
+        _applyPending = false;
         ApplyLength();
     });
 }
@@ -589,11 +586,26 @@ void FlamePanel::ApplyLength() {
     int s = std::max(0, s0 + oldLead - newLead);
     int e = e0;
     int fit = p.fitLength ? FlameEffect::FitLengthMs(p, model, ft) : 0;
-    if (fit > 0) {
+    const bool singleShot = p.action != FlameParams::Action::Preset && p.repeat == FlameParams::Repeat::Once;
+    const int shape = Shape();
+    const bool becameSingleShot = singleShot && _baseShape >= 0 && shape != _baseShape;
+    if (becameSingleShot) {
+        // just switched to a single shot: keep the bar, take the shot length from it
+        int ms = std::max(ft, e0 - s0 - oldLead - ft);
+        if (auto* sp = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("ID_SPINCTRL_Flame_ShotMs", this))) {
+            ms = std::clamp(ms, sp->GetMin(), sp->GetMax());
+            if (sp->GetValue() != ms) {
+                sp->SetValue(ms);
+                FireChangeEvent();
+            }
+            p.shotMs = ms;
+        }
+        e = s + newLead + AlignUp(p.shotMs, ft) + ft;
+    } else if (fit > 0) {
         e = s + fit;
-    } else if (p.action != FlameParams::Action::Preset && p.repeat == FlameParams::Repeat::Once) {
-        // a single positional shot: the length box sets the bar
-        e = s + newLead + AlignUp(p.shotMs, ft);
+    } else if (singleShot) {
+        // a single positional shot: the length box sets the bar (+ the off frame every effect ends with)
+        e = s + newLead + AlignUp(p.shotMs, ft) + ft;
     }
 
     if (s != s0 || e != e0) {
@@ -608,7 +620,14 @@ void FlamePanel::ApplyLength() {
             _trackedEnd = eff->GetEndTimeMS();
         }
     }
+    _baseLead = newLead;
+    _baseShape = shape;
     UpdateInfo();
+}
+
+int FlamePanel::Shape() const {
+    FlameParams p = ReadParams();
+    return (int)p.action | ((int)p.repeat << 8);
 }
 
 void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
@@ -619,8 +638,14 @@ void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
     // call; control events during that load are not user edits.
     _loading = true;
     _pendingOldLead = -1;
-    ++_applyGen; // drop any resize queued before this selection
-    CallAfter([this, startTimeMs, endTimeMs]() {
+    _applyPending = false;
+    _baseLead = -1;
+    _baseShape = -1;
+    const int gen = ++_applyGen; // drop any resize queued before this selection
+    CallAfter([this, gen, startTimeMs, endTimeMs]() {
+        if (gen != _applyGen) {
+            return; // another effect was selected since
+        }
         _loading = false;
         xLightsFrame* frame = xLightsApp::GetFrame();
         Effect* eff = frame != nullptr ? frame->GetSelectedEffectForPanel() : nullptr;
@@ -654,7 +679,8 @@ void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
         // when the user changes something in the panel.
         if (p.action != FlameParams::Action::Preset && p.repeat == FlameParams::Repeat::Once) {
             if (auto* sp = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("ID_SPINCTRL_Flame_ShotMs", this))) {
-                int ms = std::max(sp->GetMin(), eff->GetEndTimeMS() - eff->GetStartTimeMS() - CurrentLead());
+                int ft = mSequenceElements != nullptr ? mSequenceElements->GetFrameMS() : 25;
+                int ms = std::max(sp->GetMin(), eff->GetEndTimeMS() - eff->GetStartTimeMS() - CurrentLead() - ft);
                 if (sp->GetValue() != ms) {
                     sp->SetValue(std::min(ms, sp->GetMax()));
                     FireChangeEvent();
@@ -664,6 +690,8 @@ void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
         _trackedEffect = eff;
         _trackedStart = eff->GetStartTimeMS();
         _trackedEnd = eff->GetEndTimeMS();
+        _baseLead = CurrentLead();
+        _baseShape = Shape();
         UpdateInfo();
     });
 }

@@ -56,13 +56,20 @@ const FlameFixture& DmxFlame::GetFixture() const
     return fallback;
 }
 
+bool DmxFlame::FixtureLoaded() const
+{
+    return FlameFixtures::BuiltIn(_fixtureId) != nullptr || _custom.ChannelCount() > 0;
+}
+
 void DmxFlame::SetFixtureId(const std::string& id)
 {
     _fixtureId = id;
     if (_fixtureId == FlameFixtures::CustomId) {
         ReloadCustom();
     }
-    SetDmxChannelCount(GetFixture().ChannelCount());
+    if (FixtureLoaded()) {
+        SetDmxChannelCount(GetFixture().ChannelCount());
+    }
 }
 
 void DmxFlame::SetCustomFile(const std::string& file)
@@ -73,7 +80,9 @@ void DmxFlame::SetCustomFile(const std::string& file)
     _customFile = file.empty() ? file : FileUtils::FixFile("", file);
     if (_fixtureId == FlameFixtures::CustomId) {
         ReloadCustom();
-        SetDmxChannelCount(GetFixture().ChannelCount());
+        if (FixtureLoaded()) {
+            SetDmxChannelCount(GetFixture().ChannelCount());
+        }
     }
 }
 
@@ -88,16 +97,33 @@ void DmxFlame::ReloadCustom()
     }
 }
 
+namespace {
+    // the allowed swing from the position limits, low <= high whatever order they were entered in
+    void AllowedRange(const FlameFixture& fx, int minPos, int maxPos, float& lo, float& hi)
+    {
+        lo = fx.minDeg;
+        hi = fx.maxDeg;
+        if (fx.PositionCount() == 0) {
+            return;
+        }
+        int a = std::clamp(minPos, 1, fx.PositionCount());
+        int b = std::clamp(maxPos, 1, fx.PositionCount());
+        float da = fx.PositionDeg(a);
+        float db = fx.PositionDeg(b);
+        lo = std::min(da, db);
+        hi = std::max(da, db);
+    }
+}
+
 float DmxFlame::MinAllowedDeg() const
 {
     const auto& fx = GetFixture();
     if (!fx.HasAngle()) {
         return 0.0f;
     }
-    if (fx.PositionCount() > 0 && IsPositionAllowed(_minPos)) {
-        return std::min(fx.PositionDeg(_minPos), fx.PositionDeg(std::max(_minPos, _maxPos)));
-    }
-    return fx.minDeg;
+    float lo, hi;
+    AllowedRange(fx, _minPos, _maxPos, lo, hi);
+    return lo;
 }
 
 float DmxFlame::MaxAllowedDeg() const
@@ -106,10 +132,9 @@ float DmxFlame::MaxAllowedDeg() const
     if (!fx.HasAngle()) {
         return 0.0f;
     }
-    if (fx.PositionCount() > 0 && IsPositionAllowed(_maxPos)) {
-        return std::max(fx.PositionDeg(_maxPos), fx.PositionDeg(std::min(_minPos, _maxPos)));
-    }
-    return fx.maxDeg;
+    float lo, hi;
+    AllowedRange(fx, _minPos, _maxPos, lo, hi);
+    return hi;
 }
 
 float DmxFlame::ClampAngle(float deg) const
@@ -133,6 +158,9 @@ bool DmxFlame::IsPositionAllowed(int n) const
 
 void DmxFlame::WriteIdleValues(unsigned char* frame, size_t numChannels) const
 {
+    if (!CouldComputeStartChannel || !FixtureLoaded()) {
+        return; // never write onto somebody else's channels
+    }
     const auto& fx = GetFixture();
     for (const auto& [ch, value] : fx.idle) {
         if (ch < 1 || ch > (int)Nodes.size()) {
@@ -140,6 +168,31 @@ void DmxFlame::WriteIdleValues(unsigned char* frame, size_t numChannels) const
         }
         int32_t start = NodeStartChannel(ch - 1);
         if (start >= 0 && (size_t)start < numChannels) {
+            frame[start] = (unsigned char)value;
+        }
+    }
+}
+
+void DmxFlame::WriteIdleValuesForAll(const ModelManager& models, unsigned char* frame, size_t numChannels,
+                                     const std::function<bool(size_t)>& inRange)
+{
+    for (const auto& [name, m] : models) {
+        if (m == nullptr || m->GetDisplayAs() != DisplayAsType::DmxFlame) {
+            continue;
+        }
+        const auto* flame = static_cast<const DmxFlame*>(m);
+        if (!flame->CouldComputeStartChannel || !flame->FixtureLoaded()) {
+            continue;
+        }
+        const auto& fx = flame->GetFixture();
+        for (const auto& [ch, value] : fx.idle) {
+            if (ch < 1 || ch > (int)flame->Nodes.size()) {
+                continue;
+            }
+            int32_t start = flame->NodeStartChannel(ch - 1);
+            if (start < 0 || (size_t)start >= numChannels || (inRange && !inRange((size_t)start))) {
+                continue;
+            }
             frame[start] = (unsigned char)value;
         }
     }
@@ -161,10 +214,13 @@ std::vector<std::string> DmxFlame::GenerateNodeNames() const
 std::list<std::string> DmxFlame::CheckModelSettings()
 {
     std::list<std::string> res;
+    if (_fixtureId != FlameFixtures::CustomId && FlameFixtures::BuiltIn(_fixtureId) == nullptr) {
+        res.push_back(fmt::format("    ERR: Flame model '{}' has an unknown fixture '{}'; it won't fire.", GetName(), _fixtureId));
+    }
     if (_fixtureId == FlameFixtures::CustomId && !_customError.empty()) {
         res.push_back(fmt::format("    ERR: Flame model '{}' custom fixture could not be loaded: {}", GetName(), _customError));
     }
-    if (_dmxChannelCount != GetFixture().ChannelCount()) {
+    if (FixtureLoaded() && _dmxChannelCount != GetFixture().ChannelCount()) {
         res.push_back(fmt::format("    ERR: Flame model '{}' has {} channels but the fixture needs {}.", GetName(), _dmxChannelCount, GetFixture().ChannelCount()));
     }
     res.splice(res.end(), DmxModel::CheckModelSettings());
@@ -176,7 +232,9 @@ void DmxFlame::InitModel()
     if (_fixtureId == FlameFixtures::CustomId && _custom.ChannelCount() == 0) {
         ReloadCustom();
     }
-    _dmxChannelCount = GetFixture().ChannelCount();
+    if (FixtureLoaded()) {
+        _dmxChannelCount = GetFixture().ChannelCount();
+    } // else keep the saved channel count so following models don't shift
     DmxModel::InitModel();
     screenLocation.SetRenderSize(1, 1, 1);
 
