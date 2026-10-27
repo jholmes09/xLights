@@ -319,6 +319,17 @@ void FlamePanel::ValidateWindow() {
         }
     }
     ShowProperty("Flame_MoveEarly", hasAngle);
+    // with a pattern on a repeat, each shot takes its angle from the pattern
+    const bool patternRules = hasAngle && !p.pattern.empty() && p.repeat != FlameParams::Repeat::Once &&
+                              p.action == FlameParams::Action::Shot;
+    // Only the label greys out: a disabled slider wouldn't be saved, and the
+    // angle would be lost when the pattern is cleared later.
+    if (wxWindow* label = wxWindow::FindWindowByName("ID_STATICTEXT_Flame_Angle", this)) {
+        label->Enable(!patternRules);
+    }
+    if (auto* info = GetPropertyInfo("Flame_Angle"); info != nullptr && info->slider != nullptr) {
+        info->slider->SetToolTip(patternRules ? _("Angles come from the Angle Pattern. Clear the pattern to use this slider.") : wxString());
+    }
     ShowProperty("Flame_Action", hasAngle || hasPresets);
     ShowProperty("Flame_Preset", hasPresets);
     if (_presetPicker) _presetPicker->Show(hasPresets);
@@ -522,7 +533,7 @@ void FlamePanel::OnUserChange() {
         _pendingOldLead = SavedLead();
     }
     _note.clear();
-    UpdateInfo();
+    ValidateWindow(); // e.g. a pattern typed in changes what the angle slider does
     ScheduleApplyLength();
 }
 
@@ -683,7 +694,11 @@ void FlamePanel::UpdateInfo() {
         s = wxString::Format(_("Sweep %s to %s while firing."), Degrees(model->ClampAngle(p.angleDeg)), Degrees(model->ClampAngle(p.endAngleDeg)));
     } else {
         wxString len = p.repeat == FlameParams::Repeat::Once ? wxString::Format(_("%s shot"), Seconds(p.shotMs)) : wxString::Format(_("%s shots"), Seconds(p.shotMs));
-        s = fx.HasAngle() ? wxString::Format(_("%s at %s."), len, Degrees(model->ClampAngle(p.angleDeg))) : len + ".";
+        if (fx.HasAngle() && !p.pattern.empty() && p.repeat != FlameParams::Repeat::Once) {
+            s = wxString::Format(_("%s at the Angle Pattern's positions."), len);
+        } else {
+            s = fx.HasAngle() ? wxString::Format(_("%s at %s."), len, Degrees(model->ClampAngle(p.angleDeg))) : len + ".";
+        }
     }
 
     if (p.repeat == FlameParams::Repeat::Marks && p.timingTrack.empty()) {

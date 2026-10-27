@@ -208,7 +208,8 @@ namespace {
             }
             return a;
         case FlameParams::Action::Shot:
-            if (!p.pattern.empty()) {
+            // a single shot uses the slider; the pattern (hidden in Once) is for repeats
+            if (!p.pattern.empty() && p.repeat != FlameParams::Repeat::Once) {
                 int pos = p.pattern[index % p.pattern.size()];
                 a.start = a.end = fx.PositionDeg(pos);
             } else if (curve != nullptr && curve->active) {
@@ -500,7 +501,7 @@ void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuff
                 int span = (p.repeat == FlameParams::Repeat::Once || p.repeat == FlameParams::Repeat::Random) ? (cur->fireEndMs - cur->fireStartMs) : plan.shotLenMs;
                 float f = span > 0 ? std::clamp((float)(t - cur->fireStartMs) / (float)span, 0.0f, 1.0f) : 1.0f;
                 deg = cur->startDeg + (cur->endDeg - cur->startDeg) * f;
-            } else if (plan.action == FlameParams::Action::Shot && p.repeat == FlameParams::Repeat::Once && p.pattern.empty() && fx.HasAngle()) {
+            } else if (plan.action == FlameParams::Action::Shot && p.repeat == FlameParams::Repeat::Once && fx.HasAngle()) {
                 // a single continuous shot may sweep with the curve; repeated
                 // shots each hold the angle worked out in the plan
                 float pos = buffer.GetEffectTimeIntervalPosition();
@@ -519,7 +520,8 @@ void FlameEffect::Render(Effect* effect, const SettingsMap& settings, RenderBuff
         deg = plan.shots.front().startDeg;
     } else if (fx.HasAngle() && plan.action != FlameParams::Action::Preset) {
         // nothing to fire (e.g. no timing marks yet): still aim where the user set it
-        deg = !p.pattern.empty() ? model->ClampAngle(fx.PositionDeg(p.pattern.front())) : model->ClampAngle((float)p.angleDeg);
+        const bool usePattern = !p.pattern.empty() && p.repeat != FlameParams::Repeat::Once;
+        deg = usePattern ? model->ClampAngle(fx.PositionDeg(p.pattern.front())) : model->ClampAngle((float)p.angleDeg);
     }
 
     auto put = [&buffer, &fx](int ch, int value) {
