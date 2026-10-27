@@ -625,15 +625,9 @@ void FlamePanel::SetEffectTimeRange(int startTimeMs, int endTimeMs) {
                 FireChangeEvent();
                 _note = "Fit length turned off because the effect was resized by hand.";
             }
-        } else if (eff != _trackedEffect && fit > 0 && len != fit && !_selfResizing) {
-            // e.g. a preset just dropped from the palette: stretch it to the
-            // preset's length (its start stays put)
-            std::string note;
-            _selfResizing = true;
-            frame->SetSelectedEffectTimes("Flame", startTimeMs, startTimeMs + fit, note);
-            _selfResizing = false;
-            _note = note;
         }
+        // Selecting an effect never changes its times; fitting happens only
+        // when the user changes something in the panel.
         if (p.action != FlameParams::Action::Preset && p.repeat == FlameParams::Repeat::Once) {
             if (auto* sp = dynamic_cast<wxSpinCtrl*>(wxWindow::FindWindowByName("ID_SPINCTRL_Flame_ShotMs", this))) {
                 int ms = std::max(sp->GetMin(), eff->GetEndTimeMS() - eff->GetStartTimeMS() - CurrentLead());

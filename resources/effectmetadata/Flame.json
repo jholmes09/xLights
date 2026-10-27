@@ -70,7 +70,7 @@
             "controlType": "spin",
             "default": 500,
             "min": 10,
-            "max": 10000,
+            "max": 600000,
             "description": "How long the flame runs. For a single shot this also sets the effect's length (and dragging the effect updates it); for repeated shots it is each shot's length."
         },
         {
@@ -144,7 +144,7 @@
             "controlType": "spin",
             "default": 0,
             "min": 0,
-            "max": 10000,
+            "max": 600000,
             "description": "Random: shots vary in length between Shot Length and this. 0 keeps every shot at Shot Length."
         },
         {
