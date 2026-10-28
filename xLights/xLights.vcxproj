@@ -948,6 +948,7 @@ xcopy /Y /S /I "$(SolutionDir)..\resources\meshobjects\*" "$(TargetDir)meshobjec
     <ClCompile Include="..\src-core\outputs\LOROptimisedOutput.cpp" />
     <ClCompile Include="..\src-ui-wx\shared\dialogs\OptionChooser.cpp" />
     <ClCompile Include="..\src-core\outputs\ArtNetOutput.cpp" />
+    <ClCompile Include="..\src-core\outputs\ArtNetTimecode.cpp" />
     <ClCompile Include="..\src-core\outputs\DMXOutput.cpp" />
     <ClCompile Include="..\src-core\outputs\E131Output.cpp" />
     <ClCompile Include="..\src-core\outputs\IPOutput.cpp" />
@@ -1624,6 +1625,7 @@ xcopy /Y /S /I "$(SolutionDir)..\resources\meshobjects\*" "$(TargetDir)meshobjec
     <ClInclude Include="..\src-ui-wx\shared\dialogs\OptionChooser.h" />
     <ClInclude Include="..\src-core\utils\ExternalHooks.h" />
     <ClInclude Include="..\src-core\outputs\ArtNetOutput.h" />
+    <ClInclude Include="..\src-core\outputs\ArtNetTimecode.h" />
     <ClInclude Include="..\src-core\outputs\Controller.h" />
     <ClInclude Include="..\src-core\outputs\DLightOutput.h" />
     <ClInclude Include="..\src-core\outputs\DMXOutput.h" />

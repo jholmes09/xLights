@@ -1335,6 +1335,8 @@
 		<Unit filename="../src-core/models/WreathModel.h" />
 		<Unit filename="../src-core/outputs/ArtNetOutput.cpp" />
 		<Unit filename="../src-core/outputs/ArtNetOutput.h" />
+		<Unit filename="../src-core/outputs/ArtNetTimecode.cpp" />
+		<Unit filename="../src-core/outputs/ArtNetTimecode.h" />
 		<Unit filename="../src-core/outputs/Controller.cpp" />
 		<Unit filename="../src-core/outputs/Controller.h" />
 		<Unit filename="../src-core/outputs/ControllerEthernet.cpp" />

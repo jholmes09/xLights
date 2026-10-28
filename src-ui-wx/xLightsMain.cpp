@@ -129,6 +129,7 @@
 #include "xLightsVersion.h"
 #include "settings/XLightsConfigAdapter.h"
 #include "preferences/ToolbarLayout.h"
+#include "preferences/OutputSettingsPanel.h"
 #include "controllerproperties/ControllerPropertyAdapter.h"
 #include "controllers/ControllerCaps.h"
 #include "controllers/ControllerUploadData.h"
@@ -1874,6 +1875,7 @@ xLightsFrame::xLightsFrame(wxWindow* parent, int ab, wxWindowID id, bool renderO
     SetAutoSaveInterval(mAutoSaveInterval);
     spdlog::debug("Autosave interval: {}.", mAutoSaveInterval);
 
+    OutputSettingsPanel::ApplyArtNetTimecodeConfig();
     config->Read("xFadePort", &_xFadePort, 0);
 
     // overide ab setting from command line

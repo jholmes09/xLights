@@ -19,6 +19,7 @@ class wxStaticText;
 //*)
 
 class xLightsFrame;
+class wxTextCtrl;
 class OutputSettingsPanel: public wxPanel
 {
 	public:
@@ -33,6 +34,9 @@ class OutputSettingsPanel: public wxPanel
 		wxChoice* xFadexScheduleChoice;
 		wxStaticText* StaticText1;
 		//*)
+
+        // Reads the saved Art-Net timecode settings and applies them.
+        static void ApplyArtNetTimecodeConfig();
 
         virtual bool TransferDataFromWindow() override;
         virtual bool TransferDataToWindow() override;
@@ -49,6 +53,11 @@ class OutputSettingsPanel: public wxPanel
 
 	private:
         xLightsFrame *frame;
+        wxCheckBox* _tcEnable = nullptr;
+        wxTextCtrl* _tcIP = nullptr;
+        wxChoice* _tcRate = nullptr;
+        wxTextCtrl* _tcOffset = nullptr;
+        void OnTimecodeChange(wxCommandEvent& event);
 
 		//(*Handlers(OutputSettingsPanel)
 		void OnFrameSyncCheckBoxClick(wxCommandEvent& event);

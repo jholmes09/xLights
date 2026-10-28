@@ -28,6 +28,7 @@
 #include <wx/textfile.h>
 
 #include "models/DMX/DmxFlame.h"
+#include "outputs/ArtNetTimecode.h"
 #include "xLightsMain.h"
 #include "../../common/xlBaseApp.h"
 #include "shared/utils/wxUtilities.h"
@@ -1052,6 +1053,7 @@ void xLightsFrame::Scrub(wxCommandEvent& event)
 
     // update any video diaplay
     sequenceVideoPanel->UpdateVideo(ms);
+    ArtNetTimecode::Send(ms, true);
 
     //have the frame, copy from SeqData
     TimerOutput(frame);
@@ -1105,6 +1107,9 @@ void xLightsFrame::TimeSelected( wxCommandEvent& event)
 {
     mainSequencer->PanelTimeLine->SetSelectedPositionStartMS(event.GetInt());
     mainSequencer->PanelWaveForm->Refresh();
+    if (playType == PLAY_TYPE_STOPPED) {
+        ArtNetTimecode::Send(event.GetInt(), true);
+    }
 }
 
 void xLightsFrame::MousePositionUpdated( wxCommandEvent& event)
@@ -2107,6 +2112,7 @@ void xLightsFrame::DoStopSequence()
         mainSequencer->PanelWaveForm->UpdatePlayMarker();
         mainSequencer->PanelEffectGrid->ForceRefresh();
         mainSequencer->UpdateTimeDisplay(playStartTime, _fps);
+        ArtNetTimecode::Send(playStartTime, true); // video follows the playhead back
     }
     SetPlayStatus(PLAY_TYPE_STOPPED);
     if( CheckBoxLightOutput->IsChecked()) {
@@ -2815,6 +2821,7 @@ bool xLightsFrame::TimerRgbSeq(long msec)
             // the last frame stays on the wire while paused: never leave a flame burning
             SendFlameSafeFrame(false, msec);
             _flameSafeSentForPause = true;
+            ArtNetTimecode::Send(playStartTime + playOffsetTime, true); // where playback paused
         }
         return false;
     }
@@ -2893,6 +2900,7 @@ bool xLightsFrame::TimerRgbSeq(long msec)
         return true;
     }
     playCurFrame = frame;
+    ArtNetTimecode::Send(curt);
     
     if (_outputManager.IsOutputting()) {
         _outputManager.StartFrame(msec);

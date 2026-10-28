@@ -20,6 +20,9 @@
 //*)
 
 #include <wx/preferences.h>
+#include <wx/textctrl.h>
+#include <wx/config.h>
+#include "outputs/ArtNetTimecode.h"
 #include "xLightsMain.h"
 #include "utils/ip_utils.h"
 
@@ -102,6 +105,32 @@ OutputSettingsPanel::OutputSettingsPanel(wxWindow* parent,xLightsFrame *f,wxWind
     }
     ForceLocalIPChoice->Set(choices);
     ForceLocalIPChoice->SetSelection(sel);
+
+    // Art-Net timecode: lets video software (e.g. MadMapper) follow playback
+    _tcEnable = new wxCheckBox(this, wxID_ANY, _("Send Art-Net Timecode"));
+    _tcEnable->SetToolTip(_("While a sequence plays or you scrub, send its position as Art-Net timecode (UDP port 6454)."));
+    GridBagSizer1->Add(_tcEnable, wxGBPosition(4, 0), wxGBSpan(1, 2), wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 5);
+    GridBagSizer1->Add(new wxStaticText(this, wxID_ANY, _("Timecode Target IP")), wxGBPosition(5, 0), wxDefaultSpan, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 5);
+    _tcIP = new wxTextCtrl(this, wxID_ANY, wxEmptyString, wxDefaultPosition, wxSize(140, -1));
+    _tcIP->SetHint(_("blank = broadcast"));
+    _tcIP->SetToolTip(_("IP address of the computer running the video software. Leave blank to broadcast to the whole network."));
+    GridBagSizer1->Add(_tcIP, wxGBPosition(5, 1), wxDefaultSpan, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 5);
+    GridBagSizer1->Add(new wxStaticText(this, wxID_ANY, _("Timecode Frame Rate")), wxGBPosition(6, 0), wxDefaultSpan, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 5);
+    _tcRate = new wxChoice(this, wxID_ANY);
+    _tcRate->Append(_("24 fps (Film)"));
+    _tcRate->Append(_("25 fps (EBU)"));
+    _tcRate->Append(_("29.97 fps drop-frame"));
+    _tcRate->Append(_("30 fps (SMPTE)"));
+    GridBagSizer1->Add(_tcRate, wxGBPosition(6, 1), wxDefaultSpan, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 5);
+    GridBagSizer1->Add(new wxStaticText(this, wxID_ANY, _("Timecode Offset (s)")), wxGBPosition(7, 0), wxDefaultSpan, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 5);
+    _tcOffset = new wxTextCtrl(this, wxID_ANY, "0", wxDefaultPosition, wxSize(80, -1));
+    _tcOffset->SetToolTip(_("Added to the sequence time, e.g. 3600 makes the sequence start at 01:00:00:00."));
+    GridBagSizer1->Add(_tcOffset, wxGBPosition(7, 1), wxDefaultSpan, wxALL | wxALIGN_LEFT | wxALIGN_CENTER_VERTICAL, 5);
+    _tcEnable->Bind(wxEVT_CHECKBOX, &OutputSettingsPanel::OnTimecodeChange, this);
+    _tcRate->Bind(wxEVT_CHOICE, &OutputSettingsPanel::OnTimecodeChange, this);
+    _tcIP->Bind(wxEVT_TEXT, &OutputSettingsPanel::OnTimecodeChange, this);
+    _tcOffset->Bind(wxEVT_TEXT, &OutputSettingsPanel::OnTimecodeChange, this);
+
     GridBagSizer1->Layout();
     GridBagSizer1->Fit(this);
     GridBagSizer1->SetSizeHints(this);
@@ -113,7 +142,38 @@ OutputSettingsPanel::~OutputSettingsPanel()
 	//*)
 }
 
+void OutputSettingsPanel::ApplyArtNetTimecodeConfig() {
+    wxConfigBase* config = wxConfigBase::Get();
+    bool en = false;
+    int rate = 3;
+    double offsetS = 0;
+    wxString ip;
+    config->Read("ArtNetTimecodeEnabled", &en, false);
+    config->Read("ArtNetTimecodeIP", &ip, "");
+    config->Read("ArtNetTimecodeRate", &rate, 3);
+    config->Read("ArtNetTimecodeOffset", &offsetS, 0.0);
+    if (rate < 0 || rate > 3) rate = 3;
+    ArtNetTimecode::Configure(en, ip.Trim().Trim(false).ToStdString(), (ArtNetTimecode::Rate)rate, (int)(offsetS * 1000.0));
+}
+
+void OutputSettingsPanel::OnTimecodeChange(wxCommandEvent& event) {
+    if (wxPreferencesEditor::ShouldApplyChangesImmediately()) {
+        TransferDataFromWindow();
+    }
+}
+
 bool OutputSettingsPanel::TransferDataFromWindow() {
+    if (_tcEnable != nullptr) {
+        wxConfigBase* config = wxConfigBase::Get();
+        double offsetS = 0;
+        _tcOffset->GetValue().ToDouble(&offsetS);
+        config->Write("ArtNetTimecodeEnabled", _tcEnable->IsChecked());
+        config->Write("ArtNetTimecodeIP", _tcIP->GetValue().Trim().Trim(false));
+        config->Write("ArtNetTimecodeRate", std::max(0, _tcRate->GetSelection()));
+        config->Write("ArtNetTimecodeOffset", offsetS);
+        config->Flush();
+        ApplyArtNetTimecodeConfig();
+    }
     frame->SetXFadePort(xFadexScheduleChoice->GetSelection());
     frame->SetE131Sync(FrameSyncCheckBox->IsChecked());
     frame->_outputManager.SetGlobalForceLocalIP(ForceLocalIPChoice->GetStringSelection());
@@ -134,6 +194,21 @@ bool OutputSettingsPanel::TransferDataFromWindow() {
     return true;
 }
 bool OutputSettingsPanel::TransferDataToWindow() {
+    if (_tcEnable != nullptr) {
+        wxConfigBase* config = wxConfigBase::Get();
+        bool en = false;
+        int rate = 3;
+        double offsetS = 0;
+        wxString ip;
+        config->Read("ArtNetTimecodeEnabled", &en, false);
+        config->Read("ArtNetTimecodeIP", &ip, "");
+        config->Read("ArtNetTimecodeRate", &rate, 3);
+        config->Read("ArtNetTimecodeOffset", &offsetS, 0.0);
+        _tcEnable->SetValue(en);
+        _tcIP->ChangeValue(ip);
+        _tcRate->SetSelection(rate >= 0 && rate <= 3 ? rate : 3);
+        _tcOffset->ChangeValue(wxString::Format("%g", offsetS));
+    }
     xFadexScheduleChoice->SetSelection(frame->XFadePort());
     FrameSyncCheckBox->SetValue(frame->E131Sync());
     switch (frame->SuppressDuplicateFrames()) {
