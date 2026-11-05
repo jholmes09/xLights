@@ -11,6 +11,10 @@ Issue Tracker is found here: www.github.com/xLightsSequencer/xLights/issues
 XLIGHTS/NUTCRACKER RELEASE NOTES
 ---------------------------------
 2026.18  September ??, 2026
+    -enh (jholmes)               Optional performance diagnostics (perf_diagnostics=true in special.options):
+                                 logs UI freezes (on Windows with where the program was stuck), render timing
+                                 reports, slow open/save/backup, and show files that are online-only in
+                                 Dropbox/OneDrive. Help > Package Log Files collects all of it
     -enh (jholmes)               New DMX Flame model (Galaxis G-Flame, Showven Circle Flamer, or a custom
                                  JSON fixture) with an animated flame jet in the previews. xLights never
                                  drives the units' arming channels

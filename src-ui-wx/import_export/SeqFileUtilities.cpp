@@ -10,6 +10,7 @@
 
 #include <wx/stopwatch.h>
 #include "settings/XLightsConfigAdapter.h"
+#include "diagnostics/PerfDiagnostics.h"
 #include "models/DMX/DmxFlame.h"
 #include <wx/regex.h>
 #include <wx/tokenzr.h>
@@ -264,6 +265,7 @@ void xLightsFrame::SetPanelSequencerLabel(const std::string& sequence)
 
 void xLightsFrame::OpenSequence(const wxString& passed_filename, ConvertLogDialog* plog, const wxString &rp, bool skipFseqData)
 {
+    PerfDiagnostics::ScopedTimer perfTimer("open sequence " + passed_filename.ToStdString(), 0);
     FileUtils::ClearNonExistentFiles();
     _sequenceElements.GetSequenceMedia().ClearRelocations();
 
@@ -333,6 +335,7 @@ void xLightsFrame::OpenSequence(const wxString& passed_filename, ConvertLogDialo
         wxStopWatch sw; // start a stopwatch timer
 
         wxFileName selected_file(filename);
+        PerfDiagnostics::LogFileStorage("sequence", filename.ToStdString());
         SetPanelSequencerLabel(selected_file.GetName().ToStdString());
         wxFileName xml_file = selected_file;
         
@@ -912,6 +915,7 @@ void xLightsFrame::AddToMRU(const std::string& filename)
 
 bool xLightsFrame::CloseSequence()
 {
+    PerfDiagnostics::ScopedTimer perfTimer("close sequence");
     spdlog::debug("Closing sequence.");
 
     // Stem separation runs a worker thread holding raw PCM pointers into the

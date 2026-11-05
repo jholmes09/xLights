@@ -61,6 +61,7 @@ void SetHeadlessNoDock(); // ExternalHooksMacOSUI.mm — demote to background (n
 #include "shared/utils/xlDisplayInfo.h"
 #include "shared/utils/wxUtilities.h"
 #include "settings/XLightsConfigAdapter.h"
+#include "diagnostics/PerfDiagnostics.h"
 #include "utils/TraceLog.h"
 #include "utils/ExternalHooks.h"
 #include "effects/ShaderEffect.h"  // --shadertranslate spike
@@ -1075,7 +1076,6 @@ bool xLightsApp::OnInit()
             ApplyLoggingSpecialOptions();
         }
     }
-
     int id = (int)wxThread::GetCurrentId();
     spdlog::info("Main thread id: 0x{:x} or {}", id, id);
 
@@ -1921,6 +1921,9 @@ bool xLightsApp::OnInit()
     BitmapCache::SetupArtProvider();
     if (wxsOK)
     {
+        // Before the frame exists: it creates the render engine, which reads
+        // the XL_RENDER_* switches this may set.
+        PerfDiagnostics::Start();
     	xLightsFrame* Frame = new xLightsFrame(nullptr, ab, -1, renderOnlyMode);
         if (Frame->CurrentDir == "") {
             spdlog::info("Show directory not set");

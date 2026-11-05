@@ -20,6 +20,7 @@
 #include <wx/wfstream.h>
 
 #include "utils/xlImage.h"
+#include "diagnostics/PerfDiagnostics.h"
 #include "models/ModelManager.h"
 #include "import_export/ConvertDialog.h"
 #include "import_export/FileConverter.h"
@@ -93,6 +94,7 @@ void xLightsFrame::SetMediaFilename(const wxString& filename)
 {
     
     spdlog::debug("Setting media file to: {}.", filename.ToStdString());
+    PerfDiagnostics::LogFileStorage("media file", filename.ToStdString());
 
     mediaFilename = filename;
     if (mediaFilename.size() == 0) {

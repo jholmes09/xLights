@@ -110,6 +110,7 @@
       <Filter>render</Filter>
     </ClCompile>
     <ClCompile Include="..\src-ui-wx\sequencer\RenderCommandEvent.cpp" />
+    <ClCompile Include="..\src-ui-wx\diagnostics\PerfDiagnostics.cpp" />
     <ClCompile Include="..\src-ui-wx\diagnostics\RenderProgressDialog.cpp" />
     <ClCompile Include="..\src-ui-wx\media\ResizeImageDialog.cpp" />
     <ClCompile Include="..\src-ui-wx\app-shell\SaveChangesDialog.cpp" />
@@ -1684,6 +1685,7 @@
       <Filter>render</Filter>
     </ClInclude>
     <ClInclude Include="..\src-ui-wx\sequencer\RenderCommandEvent.h" />
+    <ClInclude Include="..\src-ui-wx\diagnostics\PerfDiagnostics.h" />
     <ClInclude Include="..\src-ui-wx\diagnostics\RenderProgressDialog.h" />
     <ClInclude Include="..\src-ui-wx\media\ResizeImageDialog.h" />
     <ClInclude Include="..\src-ui-wx\app-shell\SaveChangesDialog.h" />
