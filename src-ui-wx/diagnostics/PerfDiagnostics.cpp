@@ -494,7 +494,7 @@ void Start()
     if (gEnabled.load()) {
         return;
     }
-    if (SpecialOptions::GetOption("perf_diagnostics", "false") != "true") {
+    if (SpecialOptions::GetOption("perf_diagnostics", "true") != "true") {
         return;
     }
     gEnabled.store(true);
