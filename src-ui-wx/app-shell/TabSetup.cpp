@@ -18,6 +18,7 @@
 #include <wx/settings.h>
 #include <wx/stdpaths.h>
 #include "settings/XLightsConfigAdapter.h"
+#include "diagnostics/PerfDiagnostics.h"
 #include <wx/artprov.h>
 #include <wx/propgrid/propgrid.h>
 #include <wx/propgrid/advprops.h>
@@ -191,6 +192,8 @@ void xLightsFrame::UpdateRecentFilesList(bool reload) {
 
 bool xLightsFrame::SetDir(const wxString& newdir, bool permanent)
 {
+    PerfDiagnostics::ScopedTimer perfTimer("load show folder " + newdir.ToStdString(), 0);
+    PerfDiagnostics::LogShowFolderStorage(newdir.ToStdString());
     if (readOnlyMode) {
         wxMessageBox("Show directory cannot be changed in read only mode.", "Read Only Mode", wxICON_INFORMATION | wxOK);
         return false;

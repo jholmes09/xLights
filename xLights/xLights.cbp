@@ -555,6 +555,8 @@
 		<Unit filename="../src-core/render/RenderUtils.h" />
 		<Unit filename="../src-ui-wx/sequencer/RenderCommandEvent.cpp" />
 		<Unit filename="../src-ui-wx/sequencer/RenderCommandEvent.h" />
+		<Unit filename="../src-ui-wx/diagnostics/PerfDiagnostics.cpp" />
+		<Unit filename="../src-ui-wx/diagnostics/PerfDiagnostics.h" />
 		<Unit filename="../src-ui-wx/diagnostics/RenderProgressDialog.cpp" />
 		<Unit filename="../src-ui-wx/diagnostics/RenderProgressDialog.h" />
 		<Unit filename="../src-ui-wx/media/ResizeImageDialog.cpp" />

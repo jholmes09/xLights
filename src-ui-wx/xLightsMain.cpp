@@ -49,6 +49,7 @@
 #include <string>
 
 #include "app-shell/AboutDialog.h"
+#include "diagnostics/PerfDiagnostics.h"
 #include "sequencer/BatchRenderDialog.h"
 #include "CachedFileDownloader.h"
 #include "shared/dialogs/CheckboxSelectDialog.h"
@@ -2232,7 +2233,8 @@ xLightsFrame::xLightsFrame(wxWindow* parent, int ab, wxWindowID id, bool renderO
 
 xLightsFrame::~xLightsFrame()
 {
-    
+    PerfDiagnostics::Stop();
+
     static bool reenter = false;
 
     if (reenter) {
@@ -3279,6 +3281,7 @@ void xLightsFrame::OnClose(wxCloseEvent& event)
 
 void xLightsFrame::DoBackup(bool prompt, bool startup, bool forceallfiles)
 {
+    PerfDiagnostics::ScopedTimer perfTimer(startup ? "backup (on start)" : "backup", 0);
     
     time_t cur;
     time(&cur);
@@ -4828,6 +4831,15 @@ void xLightsFrame::AddDebugFilesToReport(wxDebugReport& report)
     AddLogFile(CurrentDir, "xLights_spdlog.log", report);
     // if the rolled log exists, add it to just in case it has the information we need
     AddLogFile(CurrentDir, "xLights_spdlog.1.log", report);
+    if (PerfDiagnostics::Enabled()) {
+        // Diagnostics log a lot; older rolls may still hold the stall that
+        // prompted the report.
+        AddLogFile(CurrentDir, "xLights_spdlog.2.log", report);
+        AddLogFile(CurrentDir, "xLights_spdlog.3.log", report);
+    }
+    for (const auto& f : PerfDiagnostics::ReportFiles()) {
+        report.AddFile(wxString::FromUTF8(f), wxFileName(wxString::FromUTF8(f)).GetFullName());
+    }
 
 #ifdef __APPLE__
     AddMetricKitPayloadsToReport(report);

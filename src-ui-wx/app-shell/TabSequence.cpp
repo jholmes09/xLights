@@ -13,6 +13,7 @@
 #include <wx/tokenzr.h>
 #include <wx/clipbrd.h>
 #include "settings/XLightsConfigAdapter.h"
+#include "diagnostics/PerfDiagnostics.h"
 #include <wx/wfstream.h>
 #include <wx/sstream.h>
 #include <wx/xml/xml.h>
@@ -888,6 +889,7 @@ void xLightsFrame::SaveModelsFile()
 // returns true on success
 bool xLightsFrame::SaveEffectsFile(bool backup)
 {
+    PerfDiagnostics::ScopedTimer perfTimer(backup ? "save layout backup" : "save layout");
 
 
     // dont save if currently saving
@@ -1647,6 +1649,7 @@ void xLightsFrame::OpenRenderAndSaveSequences(const wxArrayString &origFilenames
 
 void xLightsFrame::SaveSequence()
 {
+    PerfDiagnostics::ScopedTimer perfTimer("save sequence", 0);
     LogMemoryUsage("SaveSequence start: " + xlightsFilename.ToStdString());
 
     if (_seqData.NumFrames() == 0)

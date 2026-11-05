@@ -79,17 +79,17 @@ static bool xldbgEffSumMatch(const std::string& model) {
 // XL_RENDER_PROFILE=1 diagnostic: accumulate per-row / per-effect render timing
 // and dump aggregate tables to stderr when the batch completes.  Checked before
 // any clock call so it costs nothing when unset (see RenderProfile.h).
-static const bool profRender = (getenv("XL_RENDER_PROFILE") != nullptr);
+static bool profRender = false;  // read from XL_RENDER_PROFILE in the RenderEngine constructor
 
 // XL_RENDER_MEM=1 diagnostic: report what the render is spending memory on -
 // per-row buffer bytes at setup, clone-slot growth, and the process footprint
 // against the governor's budget.  Zero cost when unset.
-static const bool xldbgRenderMem = (getenv("XL_RENDER_MEM") != nullptr);
+static bool xldbgRenderMem = false;  // read from XL_RENDER_MEM in the RenderEngine constructor
 // XL_RENDER_SETUP=1 times the synchronous half of Render() - everything the
 // CALLING thread does before the jobs reach the pool. That work sits on the main
 // thread on every edit-driven and playback render, so its cost is UI latency,
 // not render throughput, and none of the existing profiling covers it.
-static const bool xldbgRenderSetup = (getenv("XL_RENDER_SETUP") != nullptr);
+static bool xldbgRenderSetup = false;  // read from XL_RENDER_SETUP in the RenderEngine constructor
 
 // -------------------------------------------------------------------------
 // Render memory governor
@@ -3660,7 +3660,14 @@ private:
 // RenderRange - moved to RenderUI.cpp (uses RenderCommandEvent wx type)
 
 RenderEngine::RenderEngine(RenderContext& ctx, JobPool& pool, RenderCache& cache)
-    : _ctx(ctx), _jobPool(pool), _renderCache(cache) {}
+    : _ctx(ctx), _jobPool(pool), _renderCache(cache) {
+    // Read here rather than at static init so a host can turn them on at
+    // startup (e.g. from special.options) - a Windows user cannot easily set
+    // an environment variable before launching from the Start menu.
+    profRender = getenv("XL_RENDER_PROFILE") != nullptr;
+    xldbgRenderMem = getenv("XL_RENDER_MEM") != nullptr;
+    xldbgRenderSetup = getenv("XL_RENDER_SETUP") != nullptr;
+}
 
 RenderEngine::~RenderEngine() {
     for (auto* rpi : _renderProgressInfo) {
