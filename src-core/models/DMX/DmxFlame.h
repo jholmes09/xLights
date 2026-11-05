@@ -11,6 +11,7 @@
  **************************************************************/
 
 #include <functional>
+#include <vector>
 
 #include "DmxModel.h"
 #include "FlameFixture.h"
@@ -59,6 +60,11 @@ public:
     // writes. inRange (optional) limits which channels may be touched.
     static void WriteIdleValuesForAll(const ModelManager& models, unsigned char* frame, size_t numChannels,
                                       const std::function<bool(size_t)>& inRange = nullptr);
+    // Callers writing many frames collect the units once: walking every model
+    // per frame is millions of map steps on a large layout.
+    [[nodiscard]] static std::vector<const DmxFlame*> CollectIdleWriters(const ModelManager& models);
+    static void WriteIdleValuesFor(const std::vector<const DmxFlame*>& flames, unsigned char* frame, size_t numChannels,
+                                   const std::function<bool(size_t)>& inRange = nullptr);
 
     void SetPreviewFrameContext(const SequenceData* data, int frame) override;
 

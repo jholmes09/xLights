@@ -4332,7 +4332,8 @@ void RenderEngine::PerformRenderSetup(RenderSetupRequest& req) {
         // channels were just cleared idles at its safe values (e.g. Showven nozzle
         // straight up), including units that only appear inside groups.
         const Model* any = !models.empty() ? models.front() : (!restrictToModels.empty() ? restrictToModels.front() : nullptr);
-        if (any != nullptr) {
+        const auto flames = any != nullptr ? DmxFlame::CollectIdleWriters(any->GetModelManager()) : std::vector<const DmxFlame*>();
+        if (!flames.empty()) {
             auto inRange = [&ranges](size_t ch) {
                 for (const auto& r : ranges) {
                     if (ch >= r.start && ch <= r.end) return true;
@@ -4340,7 +4341,7 @@ void RenderEngine::PerformRenderSetup(RenderSetupRequest& req) {
                 return false;
             };
             for (int f = startFrame; f <= endFrame; f++) {
-                DmxFlame::WriteIdleValuesForAll(any->GetModelManager(), &seqData[f][0], seqData.NumChannels(), inRange);
+                DmxFlame::WriteIdleValuesFor(flames, &seqData[f][0], seqData.NumChannels(), inRange);
             }
         }
     }

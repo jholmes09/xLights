@@ -173,9 +173,9 @@ void DmxFlame::WriteIdleValues(unsigned char* frame, size_t numChannels) const
     }
 }
 
-void DmxFlame::WriteIdleValuesForAll(const ModelManager& models, unsigned char* frame, size_t numChannels,
-                                     const std::function<bool(size_t)>& inRange)
+std::vector<const DmxFlame*> DmxFlame::CollectIdleWriters(const ModelManager& models)
 {
+    std::vector<const DmxFlame*> res;
     for (const auto& [name, m] : models) {
         if (m == nullptr || m->GetDisplayAs() != DisplayAsType::DmxFlame) {
             continue;
@@ -184,6 +184,15 @@ void DmxFlame::WriteIdleValuesForAll(const ModelManager& models, unsigned char* 
         if (!flame->CouldComputeStartChannel || !flame->FixtureLoaded()) {
             continue;
         }
+        res.push_back(flame);
+    }
+    return res;
+}
+
+void DmxFlame::WriteIdleValuesFor(const std::vector<const DmxFlame*>& flames, unsigned char* frame, size_t numChannels,
+                                  const std::function<bool(size_t)>& inRange)
+{
+    for (const auto* flame : flames) {
         const auto& fx = flame->GetFixture();
         for (const auto& [ch, value] : fx.idle) {
             if (ch < 1 || ch > (int)flame->Nodes.size()) {
@@ -196,6 +205,12 @@ void DmxFlame::WriteIdleValuesForAll(const ModelManager& models, unsigned char* 
             frame[start] = (unsigned char)value;
         }
     }
+}
+
+void DmxFlame::WriteIdleValuesForAll(const ModelManager& models, unsigned char* frame, size_t numChannels,
+                                     const std::function<bool(size_t)>& inRange)
+{
+    WriteIdleValuesFor(CollectIdleWriters(models), frame, numChannels, inRange);
 }
 
 void DmxFlame::SetPreviewFrameContext(const SequenceData* data, int frame)

@@ -1065,10 +1065,11 @@ bool xLightsFrame::SeqLoadXlightsFile(SequenceFile& xml_file, pugi::xml_document
 void xLightsFrame::ClearSequenceData()
 {
     wxASSERT(_seqData.IsValidData());
+    // flame units idle at their safe values (Showven nozzle straight up), not 0
+    const auto flames = DmxFlame::CollectIdleWriters(AllModels);
     for (size_t i = 0; i < _seqData.NumFrames(); ++i) {
         _seqData[i].Zero();
-        // flame units idle at their safe values (Showven nozzle straight up), not 0
-        DmxFlame::WriteIdleValuesForAll(AllModels, &_seqData[i][0], _seqData.NumChannels());
+        DmxFlame::WriteIdleValuesFor(flames, &_seqData[i][0], _seqData.NumChannels());
     }
 }
 
