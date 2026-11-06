@@ -201,6 +201,12 @@ bool xLightsFrame::AbortRender(int maxTimeMS, int* numThreadsAborted) {
         UpdateRenderStatus();
         if (!_renderEngine->IsRenderDone() && loops > 25) {
             wxYield();
+            // The yield runs queued events, and one of them may start a new
+            // render (an edit finishing, a mouse-up ending an effect drag). It
+            // was not there when we signalled, so signal again or this loop
+            // waits for that whole render to finish - tens of seconds on a big
+            // group - while every nested AbortRender call returns false.
+            _renderEngine->SignalAbort();
         }
         if (loops % 200 == 0) {
             spdlog::info("    Waiting for renderers to abort. {} left.", (int)_renderEngine->GetRenderProgressInfo().size());
