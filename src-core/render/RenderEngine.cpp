@@ -4487,6 +4487,12 @@ void RenderEngine::RenderDirtyModels(SequenceElements& _sequenceElements, Sequen
 
 void RenderEngine::SignalAbort() {
     for (auto rpi : _renderProgressInfo) {
+        // Already signalled: AbortRender re-signals while it waits, to catch
+        // batches started from events it pumps, and must not re-abort (and
+        // re-count) the jobs it has already stopped.
+        if (rpi->abortRequested.load()) {
+            continue;
+        }
         // Reaches a batch whose setup has not run yet, which owns no jobs to
         // abort. Without this the setup would go on to build and run the render
         // that was just cancelled, and AbortRender would wait for all of it.
