@@ -11,6 +11,8 @@ Issue Tracker is found here: www.github.com/xLightsSequencer/xLights/issues
 XLIGHTS/NUTCRACKER RELEASE NOTES
 ---------------------------------
 2026.18  September ??, 2026
+    -bug (jholmes)               Dragging an effect's start or end on a big model group no longer gets
+                                 ignored while the previous edit is still rendering
     -enh (jholmes)               New DMX Flame model (Galaxis G-Flame, Showven Circle Flamer, or a custom
                                  JSON fixture) with an animated flame jet in the previews. xLights never
                                  drives the units' arming channels
