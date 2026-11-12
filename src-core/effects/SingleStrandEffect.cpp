@@ -59,6 +59,7 @@ int SingleStrandEffect::sSkipsStartPosDefault = 1;
 int SingleStrandEffect::sSkipsAdvanceDefault = 0;
 std::string SingleStrandEffect::sTimingTrackDefault = "";
 bool SingleStrandEffect::sSkipsUseTimingTrackDefault = false;
+bool SingleStrandEffect::sSkipsAnchorStartDefault = false;
 std::string SingleStrandEffect::sSkipsTimingTrackDefault = "";
 
 SingleStrandEffect::SingleStrandEffect(int id)
@@ -100,6 +101,7 @@ void SingleStrandEffect::OnMetadataLoaded()
     sSkipsAdvanceDefault = GetIntDefault("Skips_Advance", sSkipsAdvanceDefault);
     sTimingTrackDefault = GetStringDefault("SingleStrand_TimingTrack", sTimingTrackDefault);
     sSkipsUseTimingTrackDefault = GetBoolDefault("Skips_UseTimingTrack", sSkipsUseTimingTrackDefault);
+    sSkipsAnchorStartDefault = GetBoolDefault("Skips_AnchorStart", sSkipsAnchorStartDefault);
     sSkipsTimingTrackDefault = GetStringDefault("Skips_TimingTrack", sSkipsTimingTrackDefault);
     // SingleStrand_FX / SingleStrand_FX_Palette defaults mismatch
     // (JSON="" vs C++="Blink"/"Default") — left as legacy literals.
@@ -283,6 +285,7 @@ public:
             skipsAdvance = settings.GetInt("SLIDER_Skips_Advance", SingleStrandEffect::sSkipsAdvanceDefault);
             skipsDirection = mapDirection(settings["CHOICE_Skips_Direction"]);
             skipsUseTimingTrack = settings.GetBool("CHECKBOX_Skips_UseTimingTrack", SingleStrandEffect::sSkipsUseTimingTrackDefault);
+            skipsAnchorStart = settings.GetBool("CHECKBOX_Skips_AnchorStart", SingleStrandEffect::sSkipsAnchorStartDefault);
             skipsTimingTrack = settings.Get("CHOICE_Skips_TimingTrack", SingleStrandEffect::sSkipsTimingTrackDefault);
             break;
         case MODE_FX:
@@ -321,6 +324,7 @@ public:
     int skipsAdvance = 0;
     int skipsDirection = 0;
     bool skipsUseTimingTrack = false;
+    bool skipsAnchorStart = false;
     std::string skipsTimingTrack;
 
     // FX
@@ -455,6 +459,18 @@ void SingleStrandEffect::RenderSingleStrandSkips(RenderBuffer &buffer, Effect *e
     }
 
     int colorcnt = (int)buffer.GetColorCount();
+
+    // Left normally mirrors the pattern from the far end of the line, so where the
+    // bands land depends on the line's length. With Lock Pattern to Start of Line,
+    // Left mirrors around a virtual length that is a whole number of pattern repeats
+    // instead. Lines of any length then share one pattern, and a Left effect can pick
+    // up exactly where a Right effect left off.
+    if (cache.skipsAnchorStart && direction == 1) {
+        int repeat = (Skips_BandSize + Skips_SkipSize) * std::max(colorcnt, 1);
+        if (repeat > 0) {
+            max = ((buffer.BufferWi + repeat - 1) / repeat) * repeat;
+        }
+    }
     int stepIndex;
     if (cache.skipsUseTimingTrack && !cache.skipsTimingTrack.empty()) {
         stepIndex = markIndex;
