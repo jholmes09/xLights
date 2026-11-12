@@ -11,6 +11,9 @@ Issue Tracker is found here: www.github.com/xLightsSequencer/xLights/issues
 XLIGHTS/NUTCRACKER RELEASE NOTES
 ---------------------------------
 2026.18  September ??, 2026
+    -enh (jholmes)               VU Meter: new Timing Event Fade Color type. Like Timing Event Color, each
+                                 timing mark moves to the next palette color, but as a cross-fade (set the
+                                 fade time, or fade across the whole gap to the next mark)
     -bug (jholmes)               Dragging an effect's start or end on a big model group no longer gets
                                  ignored while the previous edit is still rendering
     -enh (jholmes)               New DMX Flame model (Galaxis G-Flame, Showven Circle Flamer, or a custom

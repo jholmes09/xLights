@@ -75,6 +75,9 @@ VUMeterPanel::VUMeterPanel(wxWindow* parent, const nlohmann::json& metadata)
     // picker still owns the path so the file is serialized as
     // E_FILEPICKERCTRL_SVGFile by GetEffectStringFromWindow.
     _audioTrackChoice  = FindCtrl<wxChoice>(this, "ID_CHOICE_VUMeter_AudioTrack");
+    _fadeTimeSlider    = FindCtrl<wxSlider>(this, "ID_SLIDER_VUMeter_FadeTime");
+    _fadeTimeText      = FindCtrl<wxTextCtrl>(this, "IDD_TEXTCTRL_VUMeter_FadeTime");
+    _fadeUntilNext     = FindCtrl<wxCheckBox>(this, "ID_CHECKBOX_VUMeter_FadeUntilNext");
 
     _hiddenSvgPicker = FindCtrl<wxFilePickerCtrl>(this, "ID_FILEPICKERCTRL_SVGFile");
     if (_hiddenSvgPicker != nullptr) {
@@ -91,6 +94,12 @@ VUMeterPanel::VUMeterPanel(wxWindow* parent, const nlohmann::json& metadata)
     // the visibility-rule conditions; here we have a fully custom ValidateWindow.
     if (_typeChoice) {
         _typeChoice->Bind(wxEVT_CHOICE, [this](wxCommandEvent& e) {
+            ValidateWindow();
+            e.Skip();
+        });
+    }
+    if (_fadeUntilNext) {
+        _fadeUntilNext->Bind(wxEVT_CHECKBOX, [this](wxCommandEvent& e) {
             ValidateWindow();
             e.Skip();
         });
@@ -200,9 +209,15 @@ void VUMeterPanel::ValidateWindow() {
         "Timing Event Timed Chase To Middle", "Timing Event Timed Chase From Middle",
         "Pulse", "Timing Event Color", "Timing Event Pulse", "Timing Event Bar",
         "Timing Event Bar Bounce", "Timing Event Random Bar", "Timing Event Bars",
-        "Timing Event Jump 100", "Timing Event Pulse Color", "Timing Event Jump"
+        "Timing Event Jump 100", "Timing Event Pulse Color", "Timing Event Jump",
+        "Timing Event Fade Color"
     });
     if (_timingTrackChoice) _timingTrackChoice->Enable(timingEventType);
+
+    bool fadeColor = (type == "Timing Event Fade Color");
+    if (_fadeUntilNext) _fadeUntilNext->Enable(fadeColor);
+    setRowEnabled(_fadeTimeSlider, _fadeTimeText, nullptr,
+                  fadeColor && !(_fadeUntilNext && _fadeUntilNext->GetValue()));
     if (_regexCheck) _regexCheck->Enable(timingEventType);
     if (_filterText) _filterText->Enable(timingEventType);
 
@@ -240,7 +255,7 @@ void VUMeterPanel::ValidateWindow() {
         if (_svgMediaPicker) _svgMediaPicker->Enable(false);
         // Bars enabled for everything except a small set of "single value" types
         bool barsEnabled = !IsType(type, {
-            "On", "Color On", "Timing Event Color", "Level Color", "Note On"
+            "On", "Color On", "Timing Event Color", "Timing Event Fade Color", "Level Color", "Note On"
         });
         if (_barsSlider) _barsSlider->Enable(barsEnabled);
         if (_barsText) _barsText->Enable(barsEnabled);

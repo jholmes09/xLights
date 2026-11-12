@@ -62,6 +62,8 @@ public:
     static bool sSlowDownFallsDefault;
     static bool sLogarithmicXDefault;
     static bool sRegexDefault;
+    static int sFadeTimeDefault;
+    static bool sFadeUntilNextDefault;
     static std::string sTypeDefault;
     static std::string sShapeDefault;
 
@@ -82,6 +84,7 @@ protected:
     void RenderOnColourFrame(RenderBuffer& buffer, int gain);
     void RenderPulseFrame(RenderBuffer& buffer, int fadeframes, std::string timingtrack, int& lasttimingmark);
     void RenderTimingEventColourFrame(RenderBuffer& buffer, int& colourindex, std::string timingtrack, int sensitivity, const std::string& filter, bool regex);
+    void RenderTimingEventFadeColourFrame(RenderBuffer& buffer, const std::string& timingtrack, int fadeMs, bool untilNext, const std::string& filter, bool regex);
     void RenderLevelColourFrame(RenderBuffer& buffer, int& colourindex, int sensitivity, int& lasttimingmark, int gain);
     void RenderIntensityWaveFrame(RenderBuffer& buffer, int bars, int gain);
     void RenderLevelPulseFrame(RenderBuffer& buffer, int fadeframes, int sensitivity, int& lasttimingmark, int gain);

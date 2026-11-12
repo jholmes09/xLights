@@ -38,6 +38,7 @@
 #include "nanosvgrast_impl.h"
 
 #include <algorithm>
+#include <cmath>
 
 namespace RenderType
 {
@@ -88,7 +89,8 @@ namespace RenderType
         NOTE_LEVEL_JUMP,
         NOTE_LEVEL_JUMP100,
         DOMINANT_FREQUENCY_COLOUR,
-        DOMINANT_FREQUENCY_COLOUR_GRADIENT
+        DOMINANT_FREQUENCY_COLOUR_GRADIENT,
+        TIMING_EVENT_FADE_COLOR
     };
 }
 
@@ -134,6 +136,8 @@ int VUMeterEffect::sYOffsetMax = 100;
 bool VUMeterEffect::sSlowDownFallsDefault = true;
 bool VUMeterEffect::sLogarithmicXDefault = false;
 bool VUMeterEffect::sRegexDefault = false;
+int VUMeterEffect::sFadeTimeDefault = 500;
+bool VUMeterEffect::sFadeUntilNextDefault = false;
 std::string VUMeterEffect::sTypeDefault = "Waveform";
 std::string VUMeterEffect::sShapeDefault = "Circle";
 
@@ -161,6 +165,8 @@ void VUMeterEffect::OnMetadataLoaded()
     sSlowDownFallsDefault = GetBoolDefault("VUMeter_SlowDownFalls", sSlowDownFallsDefault);
     sLogarithmicXDefault = GetBoolDefault("VUMeter_LogarithmicX", sLogarithmicXDefault);
     sRegexDefault = GetBoolDefault("Regex", sRegexDefault);
+    sFadeTimeDefault = GetIntDefault("VUMeter_FadeTime", sFadeTimeDefault);
+    sFadeUntilNextDefault = GetBoolDefault("VUMeter_FadeUntilNext", sFadeUntilNextDefault);
     sTypeDefault = GetStringDefault("VUMeter_Type", sTypeDefault);
     sShapeDefault = GetStringDefault("VUMeter_Shape", sShapeDefault);
 }
@@ -369,7 +375,9 @@ RenderableEffect::FrameParallelism VUMeterEffect::ClassifyMode(const SettingsMap
         "Intensity Wave", "Dominant Frequency Colour", "Dominant Frequency Colour Gradient",
         "Timing Event Spike", "Timing Event Sweep", "Timing Event Sweep 2",
         "Timing Event Timed Sweep", "Timing Event Timed Sweep 2",
-        "Timing Event Timed Chase From Middle", "Timing Event Timed Chase To Middle"
+        "Timing Event Timed Chase From Middle", "Timing Event Timed Chase To Middle",
+        // Recomputed every frame from the timing marks alone; carries no state.
+        "Timing Event Fade Color"
     };
     for (const char* p : pureTypes) {
         if (type == p) {
@@ -387,6 +395,16 @@ void VUMeterEffect::Render(Effect* effect, const SettingsMap& SettingsMap, Rende
     std::string audioTrack = SettingsMap.Get("CHOICE_VUMeter_AudioTrack", "");
     if (audioTrack == "Main") audioTrack = "";
     buffer._mediaOverride = audioTrack.empty() ? nullptr : ValueCurve::GetAltAudio(audioTrack);
+
+    if (DecodeType(SettingsMap.Get("CHOICE_VUMeter_Type", sTypeDefault)) == RenderType::TIMING_EVENT_FADE_COLOR) {
+        RenderTimingEventFadeColourFrame(buffer,
+                                         SettingsMap.Get("CHOICE_VUMeter_TimingTrack", ""),
+                                         SettingsMap.GetInt("SLIDER_VUMeter_FadeTime", sFadeTimeDefault),
+                                         SettingsMap.GetBool("CHECKBOX_VUMeter_FadeUntilNext", sFadeUntilNextDefault),
+                                         SettingsMap.Get("TEXTCTRL_Filter", ""),
+                                         SettingsMap.GetBool("CHECKBOX_Regex", sRegexDefault));
+        return;
+    }
 
     float oset = buffer.GetEffectTimeIntervalPosition();
     Render(buffer,
@@ -595,6 +613,8 @@ int VUMeterEffect::DecodeType(const std::string& type)
         return RenderType::DOMINANT_FREQUENCY_COLOUR;
     } else if (type == "Dominant Frequency Colour Gradient") {
         return RenderType::DOMINANT_FREQUENCY_COLOUR_GRADIENT;
+    } else if (type == "Timing Event Fade Color") {
+        return RenderType::TIMING_EVENT_FADE_COLOR;
     }
     // default type is volume bars
     return RenderType::VOLUME_BARS;
@@ -999,6 +1019,9 @@ void VUMeterEffect::Render(RenderBuffer &buffer, SequenceElements *elements, int
             break;
         case RenderType::LEVEL_COLOR:
             RenderLevelColourFrame(buffer, _colourindex, sensitivity, _lasttimingmark, gain);
+            break;
+        case RenderType::TIMING_EVENT_FADE_COLOR:
+            // Drawn by RenderTimingEventFadeColourFrame from Render(effect, ...).
             break;
         default:
             assert(false);
@@ -3305,6 +3328,85 @@ void VUMeterEffect::RenderTimingEventColourFrame(RenderBuffer& buffer, int& colo
             {
                 buffer.SetPixel(x, y, color);
             }
+        }
+    }
+}
+
+// Like Timing Event Color, but each timing mark starts a cross-fade to the next
+// palette colour instead of a snap.  The effect opens on colour 1 (a mark exactly
+// on the effect's start does not count), and each later mark fades on to the next
+// colour, wrapping round the palette.  The fade lasts fadeMs, or, with
+// untilNext, the whole gap to the next mark (the effect's end after the last).
+// A mark that arrives mid-fade starts the next fade from the colour showing then.
+//
+// Pure: the colour is worked out afresh every frame from the marks themselves, so
+// scrubbing, parallel rendering and moved marks all give the same result.
+void VUMeterEffect::RenderTimingEventFadeColourFrame(RenderBuffer& buffer, const std::string& timingtrack, int fadeMs, bool untilNext, const std::string& filter, bool regex)
+{
+    if (timingtrack.empty()) return;
+    EffectLayer* el = GetTiming(timingtrack, GetSequenceElements(buffer));
+    if (el == nullptr) return;
+
+    const size_t colours = buffer.GetColorCount();
+    if (colours == 0) return;
+
+    const long now = (long)buffer.curPeriod * buffer.frameTimeInMs;
+    const long effStart = buffer.GetStartTimeMS();
+    const long effEnd = buffer.GetEndTimeMS();
+
+    // Marks after the effect's start, up to now, plus the first one after now
+    // (only needed for the length of the current fade in untilNext mode).
+    std::vector<long> marks;
+    long nextAfterNow = -1;
+    for (int j = 0; j < el->GetEffectCount(); j++) {
+        Effect* e = el->GetEffect(j);
+        long ms = e->GetStartTimeMS();
+        if (ms <= effStart) continue;
+        if (ms >= effEnd) break;
+        if (!e->FilteredIn(filter, regex)) continue;
+        if (ms > now) {
+            nextAfterNow = ms;
+            break;
+        }
+        marks.push_back(ms);
+    }
+
+    auto mix = [](const xlColor& a, const xlColor& b, float t) {
+        if (t <= 0.0f) return a;
+        if (t >= 1.0f) return b;
+        auto ch = [t](uint8_t x, uint8_t y) { return (uint8_t)std::lround(x + (y - x) * t); };
+        return xlColor(ch(a.red, b.red), ch(a.green, b.green), ch(a.blue, b.blue), ch(a.alpha, b.alpha));
+    };
+    auto progress = [](long elapsed, long length) {
+        if (length <= 0) return 1.0f;
+        return std::clamp((float)elapsed / (float)length, 0.0f, 1.0f);
+    };
+
+    xlColor from;
+    buffer.palette.GetColor(0, from);
+    xlColor to = from;
+    long fadeStart = 0;
+    long fadeLength = 0;
+    size_t index = 0;
+
+    for (size_t k = 0; k < marks.size(); k++) {
+        // The colour showing when this mark arrives is where its fade starts.
+        from = mix(from, to, progress(marks[k] - fadeStart, fadeLength));
+        index = (index + 1) % colours;
+        buffer.palette.GetColor(index, to);
+        fadeStart = marks[k];
+        if (untilNext) {
+            long next = (k + 1 < marks.size()) ? marks[k + 1] : (nextAfterNow >= 0 ? nextAfterNow : effEnd);
+            fadeLength = next - marks[k];
+        } else {
+            fadeLength = fadeMs;
+        }
+    }
+
+    xlColor colour = marks.empty() ? from : mix(from, to, progress(now - fadeStart, fadeLength));
+    for (int x = 0; x < buffer.BufferWi; x++) {
+        for (int y = 0; y < buffer.BufferHt; y++) {
+            buffer.SetPixel(x, y, colour);
         }
     }
 }

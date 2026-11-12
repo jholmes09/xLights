@@ -60,4 +60,7 @@ private:
     wxFilePickerCtrl* _hiddenSvgPicker = nullptr;
     MediaPickerCtrl* _svgMediaPicker = nullptr;
     wxChoice* _audioTrackChoice = nullptr;
+    wxSlider* _fadeTimeSlider = nullptr;
+    wxTextCtrl* _fadeTimeText = nullptr;
+    wxCheckBox* _fadeUntilNext = nullptr;
 };
