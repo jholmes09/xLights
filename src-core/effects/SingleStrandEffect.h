@@ -68,6 +68,7 @@ public:
     static std::string sTimingTrackDefault;
     static bool sSkipsUseTimingTrackDefault;
     static bool sSkipsAnchorStartDefault;
+    static bool sSkipsContinuePreviousDefault;
     static std::string sSkipsTimingTrackDefault;
 
 protected:

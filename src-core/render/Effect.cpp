@@ -531,6 +531,31 @@ void Effect::IncrementChangeCount()
         }
     }
 
+    // A Single Strand Skips effect set to Continue From Previous Effect takes its
+    // Starting Position from the effect that ends just before it on the same row,
+    // so a change here has to re-render it (and anything continuing from it).
+    if (mParentLayer != nullptr) {
+        static thread_local int continueDepth = 0;
+        Element* row = mParentLayer->GetParentElement();
+        if (row != nullptr && continueDepth < 64) {
+            ++continueDepth;
+            const int end = GetEndTimeMS();
+            for (size_t li = 0; li < row->GetEffectLayerCount(); li++) {
+                EffectLayer* layer = row->GetEffectLayer(li);
+                for (int k = 0; k < layer->GetEffectCount(); k++) {
+                    Effect* c = layer->GetEffect(k);
+                    if (c == this || c->GetStartTimeMS() < end) continue;
+                    if (c->GetStartTimeMS() > end + 100) break;
+                    if (c->GetEffectName() == "SingleStrand" &&
+                        c->GetSettings().Get("E_CHECKBOX_Skips_ContinuePrevious", "0") == "1") {
+                        c->IncrementChangeCount();
+                    }
+                }
+            }
+            --continueDepth;
+        }
+    }
+
     if (!s_propagatingSymbolChanges && IsLinkedToSymbol() && mParentLayer != nullptr) {
         Element* parentElement = mParentLayer->GetParentElement();
         if (parentElement != nullptr) {

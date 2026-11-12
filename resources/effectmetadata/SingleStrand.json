@@ -251,6 +251,16 @@
             "description": "When enabled, the Left direction mirrors the pattern around a whole number of pattern repeats instead of the far end of the line. Lines of different lengths then show the same band positions, so a Left effect can continue exactly where a Right effect stopped."
         },
         {
+            "id": "Skips_ContinuePrevious",
+            "label": "Continue From Previous Effect",
+            "type": "bool",
+            "controlType": "checkbox",
+            "default": false,
+            "lockable": true,
+            "tooltip": "Pick up exactly where the Skips effect just before this one (on any layer of this row) left off, one pixel further in this effect's direction. Starting Position is worked out for you.",
+            "description": "When enabled, the Starting Position is calculated so the first frame is one pixel past the last frame of the previous Skips effect on the same row, in this effect's direction. The previous effect is the one on any layer that ends latest, up to 100 ms before this one starts. Use it with Lock Pattern to Start of Line when the row holds lines of different lengths."
+        },
+        {
             "id": "SingleStrand_FX",
             "label": "FX",
             "type": "enum",
@@ -325,7 +335,8 @@
                         "Skips_UseTimingTrack",
                         "Skips_TimingTrack",
                         "Skips_Direction",
-                        "Skips_AnchorStart"
+                        "Skips_AnchorStart",
+                        "Skips_ContinuePrevious"
                     ]
                 },
                 {
@@ -364,6 +375,15 @@
             ],
             "disable": [
                 "Skips_Advance"
+            ]
+        },
+        {
+            "when": {
+                "property": "Skips_ContinuePrevious",
+                "equals": true
+            },
+            "disable": [
+                "Skips_StartPos"
             ]
         },
         {

@@ -60,6 +60,7 @@ int SingleStrandEffect::sSkipsAdvanceDefault = 0;
 std::string SingleStrandEffect::sTimingTrackDefault = "";
 bool SingleStrandEffect::sSkipsUseTimingTrackDefault = false;
 bool SingleStrandEffect::sSkipsAnchorStartDefault = false;
+bool SingleStrandEffect::sSkipsContinuePreviousDefault = false;
 std::string SingleStrandEffect::sSkipsTimingTrackDefault = "";
 
 SingleStrandEffect::SingleStrandEffect(int id)
@@ -102,6 +103,7 @@ void SingleStrandEffect::OnMetadataLoaded()
     sTimingTrackDefault = GetStringDefault("SingleStrand_TimingTrack", sTimingTrackDefault);
     sSkipsUseTimingTrackDefault = GetBoolDefault("Skips_UseTimingTrack", sSkipsUseTimingTrackDefault);
     sSkipsAnchorStartDefault = GetBoolDefault("Skips_AnchorStart", sSkipsAnchorStartDefault);
+    sSkipsContinuePreviousDefault = GetBoolDefault("Skips_ContinuePrevious", sSkipsContinuePreviousDefault);
     sSkipsTimingTrackDefault = GetStringDefault("Skips_TimingTrack", sSkipsTimingTrackDefault);
     // SingleStrand_FX / SingleStrand_FX_Palette defaults mismatch
     // (JSON="" vs C++="Blink"/"Default") — left as legacy literals.
@@ -286,6 +288,7 @@ public:
             skipsDirection = mapDirection(settings["CHOICE_Skips_Direction"]);
             skipsUseTimingTrack = settings.GetBool("CHECKBOX_Skips_UseTimingTrack", SingleStrandEffect::sSkipsUseTimingTrackDefault);
             skipsAnchorStart = settings.GetBool("CHECKBOX_Skips_AnchorStart", SingleStrandEffect::sSkipsAnchorStartDefault);
+            skipsContinuePrevious = settings.GetBool("CHECKBOX_Skips_ContinuePrevious", SingleStrandEffect::sSkipsContinuePreviousDefault);
             skipsTimingTrack = settings.Get("CHOICE_Skips_TimingTrack", SingleStrandEffect::sSkipsTimingTrackDefault);
             break;
         case MODE_FX:
@@ -302,6 +305,7 @@ public:
             timingTrack = settings.Get("CHOICE_SingleStrand_TimingTrack", SingleStrandEffect::sTimingTrackDefault);
             break;
         }
+        resolvedStartValid = false;
         decoded = true;
     }
 
@@ -325,7 +329,12 @@ public:
     int skipsDirection = 0;
     bool skipsUseTimingTrack = false;
     bool skipsAnchorStart = false;
+    bool skipsContinuePrevious = false;
     std::string skipsTimingTrack;
+    // Continue From Previous: the Starting Position worked out for this buffer's
+    // line length, so the lookup runs once per effect per buffer, not per frame.
+    mutable bool resolvedStartValid = false;
+    mutable int resolvedStart = 1;
 
     // FX
     std::string fx;
@@ -430,6 +439,159 @@ void SingleStrandEffect::Render(Effect* effect, const SettingsMap& SettingsMap, 
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Skips: Continue From Previous Effect
+//
+// Works out the Starting Position that makes an effect's first frame sit exactly
+// one pixel past where the previous Skips effect on the same row left its bands,
+// in this effect's direction. "Previous" is the Skips effect on any layer of the
+// same row that ends latest, at most kSkipsContinueGapMs before this one starts.
+// If that effect also continues, it is resolved first, so a whole run lines up.
+// ---------------------------------------------------------------------------
+namespace {
+constexpr int kSkipsContinueGapMs = 100;
+constexpr int kSkipsContinueMaxDepth = 64;
+
+struct SkipsParams {
+    int band = 1, skip = 1, startPos = 1, advance = 0, direction = 0, colors = 1;
+    bool useTiming = false, anchor = false, cont = false;
+    std::string timingTrack;
+    int startMS = 0, endMS = 0;
+};
+
+bool ReadSkipsParams(Effect* e, SkipsParams& p) {
+    if (e == nullptr || e->GetEffectName() != "SingleStrand") return false;
+    const SettingsMap& s = e->GetSettings();
+    if (s.Get("E_NOTEBOOK_SSEFFECT_TYPE", "") != "Skips") return false;
+    p.band = std::max(1, s.GetInt("E_SLIDER_Skips_BandSize", SingleStrandEffect::sSkipsBandSizeDefault));
+    p.skip = std::max(0, s.GetInt("E_SLIDER_Skips_SkipSize", SingleStrandEffect::sSkipsSkipSizeDefault));
+    p.startPos = s.GetInt("E_SLIDER_Skips_StartPos", SingleStrandEffect::sSkipsStartPosDefault);
+    p.advance = s.GetInt("E_SLIDER_Skips_Advance", SingleStrandEffect::sSkipsAdvanceDefault);
+    p.direction = mapDirection(s.Get("E_CHOICE_Skips_Direction", ""));
+    p.useTiming = s.GetBool("E_CHECKBOX_Skips_UseTimingTrack", SingleStrandEffect::sSkipsUseTimingTrackDefault);
+    p.timingTrack = s.Get("E_CHOICE_Skips_TimingTrack", SingleStrandEffect::sSkipsTimingTrackDefault);
+    p.anchor = s.GetBool("E_CHECKBOX_Skips_AnchorStart", SingleStrandEffect::sSkipsAnchorStartDefault);
+    p.cont = s.GetBool("E_CHECKBOX_Skips_ContinuePrevious", SingleStrandEffect::sSkipsContinuePreviousDefault);
+    p.colors = std::max(1, e->GetPaletteSize());
+    p.startMS = e->GetStartTimeMS();
+    p.endMS = e->GetEndTimeMS();
+    if (p.useTiming && p.timingTrack.empty()) p.useTiming = false;
+    return true;
+}
+
+// Index of the first mark ending after ms (marks are sorted and do not overlap).
+int FirstMarkEndingAfter(EffectLayer* el, int ms) {
+    int lo = 0, hi = el->GetEffectCount();
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (el->GetEffect(mid)->GetEndTimeMS() <= ms) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+}
+
+EffectLayer* TimingLayer(SequenceElements* seq, const std::string& track) {
+    if (seq == nullptr || track.empty()) return nullptr;
+    TimingElement* t = seq->GetTimingElement(track);
+    if (t == nullptr || t->GetEffectLayerCount() == 0) return nullptr;
+    return t->GetEffectLayer(0);
+}
+
+// Step index the effect is on at frame time ms; same arithmetic as the renderer.
+int SkipsStepAt(const SkipsParams& p, int ms, int frameMs, SequenceElements* seq) {
+    if (p.useTiming) {
+        EffectLayer* el = TimingLayer(seq, p.timingTrack);
+        if (el == nullptr) return -1;
+        int j = FirstMarkEndingAfter(el, ms);
+        if (j < el->GetEffectCount() && el->GetEffect(j)->GetStartTimeMS() <= ms) return j;
+        return -1;
+    }
+    int startPer = p.startMS / frameMs;
+    int endPer = (p.endMS - 1) / frameMs;
+    int periods = endPer - startPer + 1;
+    double pos = 0.0;
+    if (endPer != startPer && periods > 1) {
+        pos = (double)(ms / frameMs - startPer) / (double)(periods - 1);
+        if (pos > 1.0) pos = 1.0;
+    }
+    return int(pos * (p.advance + 1.0) * 0.99);
+}
+
+// Mirror length used for Left on a line of width w (matches RenderSingleStrandSkips).
+int SkipsMirrorLength(const SkipsParams& p, int w) {
+    if (p.anchor) {
+        int repeat = (p.band + p.skip) * p.colors;
+        if (repeat > 0) return ((w + repeat - 1) / repeat) * repeat;
+    }
+    return w;
+}
+
+int SkipsResolveStart(Effect* e, const SkipsParams& p, int w, int frameMs, SequenceElements* seq, int depth);
+
+// Pixel where the band anchored at virtual position x lands for this effect.
+int SkipsPhysical(const SkipsParams& p, int x, int w) {
+    return p.direction == 1 ? SkipsMirrorLength(p, w) - 1 - x : x;
+}
+
+int SkipsResolveStart(Effect* e, const SkipsParams& p, int w, int frameMs, SequenceElements* seq, int depth) {
+    if (!p.cont || depth > kSkipsContinueMaxDepth || (p.direction != 0 && p.direction != 1)) return p.startPos;
+    EffectLayer* myLayer = e->GetParentEffectLayer();
+    Element* row = myLayer != nullptr ? myLayer->GetParentElement() : nullptr;
+    if (row == nullptr) return p.startPos;
+
+    Effect* prev = nullptr;
+    SkipsParams pp;
+    for (size_t li = 0; li < row->GetEffectLayerCount(); li++) {
+        EffectLayer* layer = row->GetEffectLayer(li);
+        for (int k = 0; k < layer->GetEffectCount(); k++) {
+            Effect* c = layer->GetEffect(k);
+            if (c == e) continue;
+            if (c->GetStartTimeMS() >= p.startMS) break;
+            int gap = p.startMS - c->GetEndTimeMS();
+            if (gap < 0 || gap > kSkipsContinueGapMs) continue;
+            SkipsParams cp;
+            if (!ReadSkipsParams(c, cp) || (cp.direction != 0 && cp.direction != 1)) continue;
+            if (prev == nullptr || c->GetEndTimeMS() > pp.endMS) { prev = c; pp = cp; }
+        }
+    }
+    if (prev == nullptr) return p.startPos;
+
+    // Where the previous effect's bands sit on its last drawn frame.
+    int prevStart = SkipsResolveStart(prev, pp, w, frameMs, seq, depth + 1);
+    int lastMs = ((pp.endMS - 1) / frameMs) * frameMs;
+    int prevStep = SkipsStepAt(pp, lastMs, frameMs, seq);
+    if (prevStep < 0 && pp.useTiming) {
+        // Ended between marks: use the last mark that started inside the effect.
+        EffectLayer* el = TimingLayer(seq, pp.timingTrack);
+        if (el != nullptr) {
+            int j = FirstMarkEndingAfter(el, lastMs);
+            while (j > 0 && (j >= el->GetEffectCount() || el->GetEffect(j)->GetStartTimeMS() > lastMs)) j--;
+            if (j >= 0 && j < el->GetEffectCount() && el->GetEffect(j)->GetStartTimeMS() >= pp.startMS) prevStep = j;
+        }
+    }
+    if (prevStep < 0) return p.startPos;
+    int prevPhys = SkipsPhysical(pp, prevStart - 1 + prevStep * pp.band, w);
+
+    // This effect's first drawn frame.
+    int firstMs = ((p.startMS + frameMs - 1) / frameMs) * frameMs;
+    int step0 = SkipsStepAt(p, firstMs, frameMs, seq);
+    if (step0 < 0) {
+        EffectLayer* el = TimingLayer(seq, p.timingTrack);
+        if (el == nullptr) return p.startPos;
+        int j = FirstMarkEndingAfter(el, firstMs);
+        if (j >= el->GetEffectCount() || el->GetEffect(j)->GetStartTimeMS() >= p.endMS) return p.startPos;
+        step0 = j;
+    }
+
+    int target = prevPhys + (p.direction == 1 ? -1 : 1);
+    int x0 = p.direction == 1 ? SkipsMirrorLength(p, w) - 1 - target : target;
+    int repeat = (p.band + p.skip) * p.colors;
+    long long base = (long long)x0 - (long long)step0 * p.band;
+    int sp = (int)(((base % repeat) + repeat) % repeat);
+    return sp + 1;
+}
+} // namespace
+
 void SingleStrandEffect::RenderSingleStrandSkips(RenderBuffer &buffer, Effect *eff, const SingleStrandRenderCache& cache)
 {
     // When a timing track is selected, the pattern advances by exactly one position
@@ -448,7 +610,20 @@ void SingleStrandEffect::RenderSingleStrandSkips(RenderBuffer &buffer, Effect *e
     const int Skips_SkipSize = cache.skipsSkipSize;
     const int advances = cache.skipsAdvance;
 
-    int x = cache.skipsStartPos - 1;
+    int startPos = cache.skipsStartPos;
+    if (cache.skipsContinuePrevious) {
+        if (!cache.resolvedStartValid) {
+            SkipsParams p;
+            if (ReadSkipsParams(eff, p)) {
+                cache.resolvedStart = SkipsResolveStart(eff, p, buffer.BufferWi, buffer.frameTimeInMs, GetSequenceElements(buffer), 0);
+            } else {
+                cache.resolvedStart = cache.skipsStartPos;
+            }
+            cache.resolvedStartValid = true;
+        }
+        startPos = cache.resolvedStart;
+    }
+    int x = startPos - 1;
     xlColor color;
     int second = 0;
     int max = buffer.BufferWi;
