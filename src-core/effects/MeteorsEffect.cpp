@@ -577,29 +577,52 @@ void MeteorsEffect::GatherMeteorsSmooth(RenderBuffer& buffer, const MeteorsGathe
     std::copy(before.begin(), before.end(), pixels);
     MeteorsEffect::GatherMeteors(buffer, params, partsNext);
 
-    // integer weights out of 256 so the blend is exact and identical everywhere
-    const int wb = std::clamp((int)std::lround(frac * 256.0f), 0, 256);
-    const int wa = 256 - wb;
-    // Blend with alpha as weight.  When the fade lives in the alpha channel a
-    // pixel the meteor has not reached yet is transparent black; a plain lerp
-    // would dim the colour AND the alpha, so the leading bulb would come in at
-    // f squared instead of f.
+    // Perceptual blend.  A plain lerp splits one bulb's light evenly across two,
+    // so mid-step a short meteor reads as two dim dots with a dark gap between
+    // them and it "inchworms" along.  Blending in a power-2.2 space instead
+    // keeps both bulbs bright through the step (each ~73% at the midpoint) so
+    // the head glides.  Each pixel's light is colour x alpha; blend that and the
+    // alpha separately, then divide back so alpha-carried fades stay correct.
+    constexpr float kGamma = 2.2f;
+    const float wb = std::clamp(frac, 0.0f, 1.0f);
+    const float wa = 1.0f - wb;
+    float pw[256];
+    for (int v = 0; v < 256; ++v) {
+        pw[v] = std::pow((float)v / 255.0f, kGamma);
+    }
+    auto unpow = [kGamma](float x) -> float {
+        return x <= 0.0f ? 0.0f : std::pow(x, 1.0f / kGamma);
+    };
     auto blendRow = [&](int y) {
         const size_t s = (size_t)y * W;
         for (size_t i = s; i < s + W; ++i) {
             const xlColor& a = here[i];
             xlColor& b = pixels[i];
-            const int ka = wa * a.alpha;
-            const int kb = wb * b.alpha;
-            const int k = ka + kb;
-            if (k == 0) {
+            // xlColor's == ignores alpha, so compare all four channels
+            if (a.red == b.red && a.green == b.green && a.blue == b.blue && a.alpha == b.alpha) {
+                continue;
+            }
+            const float al = unpow(wa * pw[a.alpha] + wb * pw[b.alpha]);
+            if (al <= 0.0f) {
                 b = xlColor(0, 0, 0, 0);
                 continue;
             }
-            b.red = (uint8_t)((a.red * ka + b.red * kb + k / 2) / k);
-            b.green = (uint8_t)((a.green * ka + b.green * kb + k / 2) / k);
-            b.blue = (uint8_t)((a.blue * ka + b.blue * kb + k / 2) / k);
-            b.alpha = (uint8_t)((k + 128) >> 8);
+            const float aa = a.alpha / 255.0f;
+            const float ba = b.alpha / 255.0f;
+            auto ch = [&](uint8_t ca, uint8_t cb) -> uint8_t {
+                // light this channel emits on each side: colour scaled by alpha
+                const float la = std::pow(ca / 255.0f * aa, kGamma);
+                const float lb = std::pow(cb / 255.0f * ba, kGamma);
+                const float out = unpow(wa * la + wb * lb) / al;
+                return (uint8_t)std::clamp((int)std::lround(out * 255.0f), 0, 255);
+            };
+            const uint8_t r = ch(a.red, b.red);
+            const uint8_t g = ch(a.green, b.green);
+            const uint8_t bl = ch(a.blue, b.blue);
+            b.red = r;
+            b.green = g;
+            b.blue = bl;
+            b.alpha = (uint8_t)std::clamp((int)std::lround(al * 255.0f), 0, 255);
         }
     };
     if (count >= 20000) {
