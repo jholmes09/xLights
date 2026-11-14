@@ -111,6 +111,7 @@ public:
     static int sYOffsetMax;
     static bool sUseMusicDefault;
     static bool sFadeWithDistanceDefault;
+    static bool sSmoothDefault;
 
     static bool IsRadialStyle(const SettingsMap& settings);
 
@@ -144,26 +145,32 @@ protected:
     static void ComputeRadialCuts(const MeteorsRadialFrameState& fs, std::vector<int>& cuts);
 
 private:
-    std::unique_ptr<EffectFrameState> RenderMeteorsVertical(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mspeed, int warmupFrames);
+    std::unique_ptr<EffectFrameState> RenderMeteorsVertical(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mspeed, int warmupFrames, bool smooth);
         void VerticalAddMeteors(RenderBuffer& buffer, int ColorScheme, int Count);
         void VerticalMoveMeteors(RenderBuffer& buffer, int speed);
         void VerticalRemoveMeteors(RenderBuffer& buffer, int Length);
-    std::unique_ptr<EffectFrameState> RenderMeteorsHorizontal(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mspeed, int warmupFrames);
+    std::unique_ptr<EffectFrameState> RenderMeteorsHorizontal(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mspeed, int warmupFrames, bool smooth);
         void HorizontalAddMeteors(RenderBuffer& buffer, int ColorScheme, int Count);
         void HorizontalMoveMeteors(RenderBuffer& buffer, int speed);
         void HorizontalRemoveMeteors(RenderBuffer& buffer, int Length);
-    std::unique_ptr<EffectFrameState> AdvanceMeteorsImplode(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int mspeed, int xoffset, int yoffset, bool fadeWithDistance, int warmupFrames);
+    std::unique_ptr<EffectFrameState> AdvanceMeteorsImplode(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int mspeed, int xoffset, int yoffset, bool fadeWithDistance, int warmupFrames, bool smooth);
         void ImplodeAddMeteors(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int xoffset, int yoffset);
-        void ImplodeMoveMeteors(RenderBuffer& buffer, int speed, int xoffset, int yoffset, bool fadeWithDistance);
+        void ImplodeMoveMeteors(RenderBuffer& buffer, float speed, int xoffset, int yoffset, bool fadeWithDistance);
         void ImplodeRemoveMeteors(RenderBuffer& buffer, int xoffset, int yoffset);
-    std::unique_ptr<EffectFrameState> RenderIcicleDrip(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mSpeed, int warmupFrames);
+    std::unique_ptr<EffectFrameState> RenderIcicleDrip(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mSpeed, int warmupFrames, bool smooth);
         void IcicleAddMeteors(RenderBuffer& buffer, int ColorScheme, int Count);
         void IcicleMoveMeteors(RenderBuffer& buffer, int mSpeed);
         void IcicleRemoveMeteors(RenderBuffer& buffer);
-    std::unique_ptr<EffectFrameState> AdvanceMeteorsExplode(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int mSpeed, int xoffset, int yoffset, bool fadeWithDistance, int warmupFrames);
+    std::unique_ptr<EffectFrameState> AdvanceMeteorsExplode(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int mSpeed, int xoffset, int yoffset, bool fadeWithDistance, int warmupFrames, bool smooth);
         void ExplodeAddMeteors(RenderBuffer& buffer, int ColorScheme, int Count, int xoffset, int yoffset);
-        void ExplodeMoveMeteors(RenderBuffer& buffer, int speed, int xoffset, int yoffset, bool fadeWithDistance);
+        void ExplodeMoveMeteors(RenderBuffer& buffer, float speed, int xoffset, int yoffset, bool fadeWithDistance);
         void ExplodeRemoveMeteors(RenderBuffer& buffer);
 
     float calcEffectStateOffset(int mSpeed, RenderBuffer& buffer);
+
+    // Smooth Motion draw for the axis-aligned styles: gather the frame at the
+    // meteors' whole-pixel positions and again one pixel further along, then
+    // blend the two by how far the meteors have travelled between them.
+    void GatherMeteorsSmooth(RenderBuffer& buffer, const MeteorsGatherParams& params, const std::vector<MeteorSnapshot>& parts,
+                             const std::vector<MeteorSnapshot>& partsNext, float frac);
 };

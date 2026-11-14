@@ -92,6 +92,15 @@
             "description": "Number of simulation frames to run before the first visible frame, so the effect starts with meteors already in flight rather than an empty screen."
         },
         {
+            "id": "Meteors_Smooth",
+            "label": "Smooth Motion",
+            "type": "bool",
+            "controlType": "checkbox",
+            "default": false,
+            "lockable": true,
+            "description": "Moves meteors in fractions of a pixel, blending each one across the two pixels it sits between, so slow speeds glide instead of hopping a whole pixel every few frames. Implode and Explode move by fractional steps. Off renders exactly as before."
+        },
+        {
             "id": "Meteors_XOffset",
             "label": "Horizontal Offset",
             "type": "int",

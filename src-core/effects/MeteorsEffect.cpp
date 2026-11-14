@@ -57,6 +57,7 @@ int MeteorsEffect::sYOffsetMin = -100;
 int MeteorsEffect::sYOffsetMax = 100;
 bool MeteorsEffect::sUseMusicDefault = false;
 bool MeteorsEffect::sFadeWithDistanceDefault = false;
+bool MeteorsEffect::sSmoothDefault = false;
 
 MeteorsEffect::MeteorsEffect(int id) : RenderableEffect(id, "Meteors", meteors_16, meteors_24, meteors_32, meteors_48, meteors_64)
 {
@@ -93,6 +94,7 @@ void MeteorsEffect::OnMetadataLoaded()
     sYOffsetMax = (int)GetMaxFromMetadata("Meteors_YOffset", sYOffsetMax);
     sUseMusicDefault = GetBoolDefault("Meteors_UseMusic", sUseMusicDefault);
     sFadeWithDistanceDefault = GetBoolDefault("FadeWithDistance", sFadeWithDistanceDefault);
+    sSmoothDefault = GetBoolDefault("Meteors_Smooth", sSmoothDefault);
 }
 
 std::list<std::string> MeteorsEffect::CheckEffectSettings(const SettingsMap& settings, AudioManager* media, Model* model, Effect* eff, bool renderCache)
@@ -283,6 +285,10 @@ static MeteorsRenderCache* GetCache(RenderBuffer &buffer, int id) {
 struct MeteorsFrameState : public EffectFrameState {
     std::vector<MeteorSnapshot> parts;
     MeteorsGatherParams params;
+    // Smooth Motion: the same meteors one pixel further along, and how far
+    // (0..1) they have travelled towards it.  Empty / 0 when the option is off.
+    std::vector<MeteorSnapshot> partsNext;
+    float smoothFrac = 0.0f;
 };
 
 // Build this frame's immutable draw snapshot from the advanced meteor list.
@@ -544,6 +550,67 @@ void MeteorsEffect::GatherMeteors(RenderBuffer& buffer, const MeteorsGatherParam
 }
 
 
+// Smooth Motion.  Every axis-aligned meteor moves by the same whole-pixel step
+// each frame, so they all share one fractional position between where they are
+// drawn and the next pixel along.  Draw both and blend.  The trail is the same
+// shape at both positions, so the blend slides the whole meteor, tail included,
+// by a fraction of a pixel.  This always runs the CPU gather: it has to read the
+// pixels back, and the GPU gathers may still be in flight when they return.
+void MeteorsEffect::GatherMeteorsSmooth(RenderBuffer& buffer, const MeteorsGatherParams& params, const std::vector<MeteorSnapshot>& parts,
+                                        const std::vector<MeteorSnapshot>& partsNext, float frac) {
+    const int W = buffer.BufferWi;
+    const int H = buffer.BufferHt;
+    if (buffer.dmx_buffer || W <= 0 || H <= 0 || frac <= (1.0f / 512.0f) || partsNext.size() != parts.size()) {
+        MeteorsEffect::GatherMeteors(buffer, params, parts);
+        return;
+    }
+    if (frac >= 1.0f - (1.0f / 512.0f)) {
+        MeteorsEffect::GatherMeteors(buffer, params, partsNext);
+        return;
+    }
+
+    const size_t count = (size_t)W * (size_t)H;
+    xlColor* pixels = buffer.GetPixels();
+    std::vector<xlColor> before(pixels, pixels + count);
+    MeteorsEffect::GatherMeteors(buffer, params, parts);
+    std::vector<xlColor> here(pixels, pixels + count);
+    std::copy(before.begin(), before.end(), pixels);
+    MeteorsEffect::GatherMeteors(buffer, params, partsNext);
+
+    // integer weights out of 256 so the blend is exact and identical everywhere
+    const int wb = std::clamp((int)std::lround(frac * 256.0f), 0, 256);
+    const int wa = 256 - wb;
+    // Blend with alpha as weight.  When the fade lives in the alpha channel a
+    // pixel the meteor has not reached yet is transparent black; a plain lerp
+    // would dim the colour AND the alpha, so the leading bulb would come in at
+    // f squared instead of f.
+    auto blendRow = [&](int y) {
+        const size_t s = (size_t)y * W;
+        for (size_t i = s; i < s + W; ++i) {
+            const xlColor& a = here[i];
+            xlColor& b = pixels[i];
+            const int ka = wa * a.alpha;
+            const int kb = wb * b.alpha;
+            const int k = ka + kb;
+            if (k == 0) {
+                b = xlColor(0, 0, 0, 0);
+                continue;
+            }
+            b.red = (uint8_t)((a.red * ka + b.red * kb + k / 2) / k);
+            b.green = (uint8_t)((a.green * ka + b.green * kb + k / 2) / k);
+            b.blue = (uint8_t)((a.blue * ka + b.blue * kb + k / 2) / k);
+            b.alpha = (uint8_t)((k + 128) >> 8);
+        }
+    };
+    if (count >= 20000) {
+        parallel_for(0, H, blendRow);
+    } else {
+        for (int y = 0; y < H; ++y) {
+            blendRow(y);
+        }
+    }
+}
+
 // ColorScheme: 0=rainbow, 1=range, 2=palette
 // MeteorsEffect: 0=down, 1=up, 2=left, 3=right, 4=implode, 5=explode
 void MeteorsEffect::Render(Effect *effect, const SettingsMap &SettingsMap, RenderBuffer &buffer) {
@@ -557,7 +624,11 @@ void MeteorsEffect::Render(Effect *effect, const SettingsMap &SettingsMap, Rende
             DrawRadialSnapshot(buffer, static_cast<const MeteorsRadialFrameState&>(*buffer.pendingSnapshot));
         } else {
             const MeteorsFrameState& fs = static_cast<const MeteorsFrameState&>(*buffer.pendingSnapshot);
-            GatherMeteors(buffer, fs.params, fs.parts);
+            if (!fs.partsNext.empty() || fs.smoothFrac > 0.0f) {
+                GatherMeteorsSmooth(buffer, fs.params, fs.parts, fs.partsNext, fs.smoothFrac);
+            } else {
+                GatherMeteors(buffer, fs.params, fs.parts);
+            }
         }
         return;
     }
@@ -573,7 +644,11 @@ void MeteorsEffect::Render(Effect *effect, const SettingsMap &SettingsMap, Rende
         DrawRadialSnapshot(buffer, static_cast<const MeteorsRadialFrameState&>(*fs));
     } else {
         const MeteorsFrameState& mfs = static_cast<const MeteorsFrameState&>(*fs);
-        GatherMeteors(buffer, mfs.params, mfs.parts);
+        if (!mfs.partsNext.empty() || mfs.smoothFrac > 0.0f) {
+            GatherMeteorsSmooth(buffer, mfs.params, mfs.parts, mfs.partsNext, mfs.smoothFrac);
+        } else {
+            GatherMeteors(buffer, mfs.params, mfs.parts);
+        }
     }
 }
 
@@ -591,6 +666,7 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::AdvanceState(Effect *effect, co
     int mSpeed = GetValueCurveInt("Meteors_Speed", sSpeedDefault, SettingsMap, oset, sSpeedMin, sSpeedMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
     int ColorScheme = GetMeteorColorScheme(SettingsMap.Get("CHOICE_Meteors_Type", sTypeDefault));
     int warmupFrames = SettingsMap.GetInt("SLIDER_Meteors_WamupFrames", sWarmupFramesDefault);
+    bool smooth = SettingsMap.GetBool("CHECKBOX_Meteors_Smooth", sSmoothDefault);
 
     if (SettingsMap.GetBool("CHECKBOX_Meteors_UseMusic", sUseMusicDefault)) {
         float f = 0.0;
@@ -615,23 +691,23 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::AdvanceState(Effect *effect, co
     switch (MeteorsEffect) {
         case METEORS_DOWN: //0:
         case METEORS_UP: //1:
-            return RenderMeteorsVertical(buffer, ColorScheme, Count, Length, MeteorsEffect, SwirlIntensity, mSpeed, warmupFrames);
+            return RenderMeteorsVertical(buffer, ColorScheme, Count, Length, MeteorsEffect, SwirlIntensity, mSpeed, warmupFrames, smooth);
         case METEORS_LEFT: //2:
         case METEORS_RIGHT: //3:
-            return RenderMeteorsHorizontal(buffer, ColorScheme, Count, Length, MeteorsEffect, SwirlIntensity, mSpeed, warmupFrames);
+            return RenderMeteorsHorizontal(buffer, ColorScheme, Count, Length, MeteorsEffect, SwirlIntensity, mSpeed, warmupFrames, smooth);
         case METEORS_ICICLES: //6
-            return RenderIcicleDrip(buffer, ColorScheme, Count, Length, MeteorsEffect, SwirlIntensity, mSpeed, warmupFrames);
+            return RenderIcicleDrip(buffer, ColorScheme, Count, Length, MeteorsEffect, SwirlIntensity, mSpeed, warmupFrames, smooth);
         case METEORS_ICICLES_BKG: //7
-            return RenderIcicleDrip(buffer, ColorScheme, Count, -Length, MeteorsEffect, SwirlIntensity, mSpeed, warmupFrames);
+            return RenderIcicleDrip(buffer, ColorScheme, Count, -Length, MeteorsEffect, SwirlIntensity, mSpeed, warmupFrames, smooth);
         case METEORS_IMPLODE: //4:
         case METEORS_EXPLODE: { //5:
             int xoffset = GetValueCurveInt("Meteors_XOffset", sXOffsetDefault, SettingsMap, oset, sXOffsetMin, sXOffsetMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
             int yoffset = GetValueCurveInt("Meteors_YOffset", sYOffsetDefault, SettingsMap, oset, sYOffsetMin, sYOffsetMax, buffer.GetStartTimeMS(), buffer.GetEndTimeMS());
             bool fadeWithDistance = SettingsMap.GetBool("CHECKBOX_FadeWithDistance", sFadeWithDistanceDefault);
             if (MeteorsEffect == METEORS_IMPLODE) {
-                return AdvanceMeteorsImplode(buffer, ColorScheme, Count, Length, mSpeed, xoffset, yoffset, fadeWithDistance, warmupFrames);
+                return AdvanceMeteorsImplode(buffer, ColorScheme, Count, Length, mSpeed, xoffset, yoffset, fadeWithDistance, warmupFrames, smooth);
             }
-            return AdvanceMeteorsExplode(buffer, ColorScheme, Count, Length, mSpeed, xoffset, yoffset, fadeWithDistance, warmupFrames);
+            return AdvanceMeteorsExplode(buffer, ColorScheme, Count, Length, mSpeed, xoffset, yoffset, fadeWithDistance, warmupFrames, smooth);
         }
     }
     return nullptr;
@@ -708,7 +784,7 @@ void MeteorsEffect::HorizontalRemoveMeteors(RenderBuffer& buffer, int Length)
     std::erase_if(cache->meteors, MeteorHasExpiredX(TailLength));
 }
 
-std::unique_ptr<EffectFrameState> MeteorsEffect::RenderMeteorsHorizontal(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mSpeed, int warmupFrames)
+std::unique_ptr<EffectFrameState> MeteorsEffect::RenderMeteorsHorizontal(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mSpeed, int warmupFrames, bool smooth)
 {
     MeteorsRenderCache* cache = GetCache(buffer, id);
 
@@ -724,6 +800,7 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::RenderMeteorsHorizontal(RenderB
         }
     }
 
+    const float carry = cache->effectState;
     cache->effectState += calcEffectStateOffset(mSpeed, buffer);
     int speed = cache->effectState / 4;
     cache->effectState -= speed * 4;
@@ -745,8 +822,23 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::RenderMeteorsHorizontal(RenderB
         parts.push_back({ meteor.y + dy, meteor.x, 0, meteor.hsv.hue, meteor.hsv.saturation, meteor.hsv.value });
         ++n;
     }
+    std::vector<MeteorSnapshot> partsNext;
+    if (smooth) {
+        partsNext.reserve(cache->meteors.size());
+        n = 0;
+        for (auto& meteor : cache->meteors) {
+            double swirl_phase = double(meteor.x - 1) / 5.0 + double(n) / 100.0;
+            int dy = int(double(SwirlIntensity * buffer.BufferHt) / 80.0 * buffer.sin(swirl_phase));
+            partsNext.push_back({ meteor.y + dy, meteor.x - 1, 0, meteor.hsv.hue, meteor.hsv.saturation, meteor.hsv.value });
+            ++n;
+        }
+    }
     MeteorsGatherParams params{ 1, MeteorsEffect, TailLength, ColorScheme, buffer.allowAlpha ? 1 : 0, 0, buffer.hashRandomFrameSeed() };
     auto fs = BuildMeteorsFrame(params, parts);
+    if (smooth) {
+        fs->partsNext = std::move(partsNext);
+        fs->smoothFrac = carry / 4.0f;
+    }
 
     HorizontalMoveMeteors(buffer, speed);
 
@@ -828,7 +920,7 @@ void MeteorsEffect::VerticalRemoveMeteors(RenderBuffer& buffer, int Length)
     std::erase_if(cache->meteors, MeteorHasExpiredY(TailLength));
 }
 
-std::unique_ptr<EffectFrameState> MeteorsEffect::RenderMeteorsVertical(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mSpeed, int warmupFrames)
+std::unique_ptr<EffectFrameState> MeteorsEffect::RenderMeteorsVertical(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mSpeed, int warmupFrames, bool smooth)
 {
     MeteorsRenderCache* cache = GetCache(buffer, id);
 
@@ -844,6 +936,7 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::RenderMeteorsVertical(RenderBuf
         }
     }
 
+    const float carry = cache->effectState;
     cache->effectState += calcEffectStateOffset(mSpeed, buffer);
     int speed = cache->effectState / 4;
     cache->effectState -= speed * 4;
@@ -867,8 +960,23 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::RenderMeteorsVertical(RenderBuf
         parts.push_back({ meteor.x + dx, meteor.y, 0, meteor.hsv.hue, meteor.hsv.saturation, meteor.hsv.value });
         ++n;
     }
+    std::vector<MeteorSnapshot> partsNext;
+    if (smooth) {
+        partsNext.reserve(cache->meteors.size());
+        n = 0;
+        for (auto& meteor : cache->meteors) {
+            double swirl_phase = double(meteor.y - 1) / 5.0 + double(n) / 100.0;
+            int dx = int(double(SwirlIntensity * buffer.BufferWi) / 80.0 * buffer.sin(swirl_phase));
+            partsNext.push_back({ meteor.x + dx, meteor.y - 1, 0, meteor.hsv.hue, meteor.hsv.saturation, meteor.hsv.value });
+            ++n;
+        }
+    }
     MeteorsGatherParams params{ 0, MeteorsEffect, TailLength, ColorScheme, buffer.allowAlpha ? 1 : 0, 0, buffer.hashRandomFrameSeed() };
     auto fs = BuildMeteorsFrame(params, parts);
+    if (smooth) {
+        fs->partsNext = std::move(partsNext);
+        fs->smoothFrac = carry / 4.0f;
+    }
 
     VerticalMoveMeteors(buffer, speed);
 
@@ -943,7 +1051,7 @@ void MeteorsEffect::IcicleRemoveMeteors(RenderBuffer& buffer)
 }
 
 //icicle drip effect, based on RenderMeteorsVertical: -DJ
-std::unique_ptr<EffectFrameState> MeteorsEffect::RenderIcicleDrip(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mSpeed, int warmupFrames)
+std::unique_ptr<EffectFrameState> MeteorsEffect::RenderIcicleDrip(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int MeteorsEffect, int SwirlIntensity, int mSpeed, int warmupFrames, bool smooth)
 {
     MeteorsRenderCache* cache = GetCache(buffer, id);
 
@@ -959,6 +1067,7 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::RenderIcicleDrip(RenderBuffer& 
         }
     }
 
+    const float carry = cache->effectState;
     cache->effectState += calcEffectStateOffset(mSpeed, buffer);
     int speed = cache->effectState / 4;
     cache->effectState -= speed * 4;
@@ -988,8 +1097,23 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::RenderIcicleDrip(RenderBuffer& 
         parts.push_back({ meteor.x + dx, meteor.y, meteor.h, meteor.hsv.hue, meteor.hsv.saturation, meteor.hsv.value });
         ++n;
     }
+    std::vector<MeteorSnapshot> partsNext;
+    if (smooth) {
+        partsNext.reserve(cache->meteors.size());
+        n = 0;
+        for (auto& meteor : cache->meteors) {
+            float swirl_phase = float(meteor.y - 1) / 5.0f + float(n) / 100.0f;
+            int dx = int(float(SwirlIntensity * buffer.BufferWi) / 80.0f * buffer.sin(swirl_phase));
+            partsNext.push_back({ meteor.x + dx, meteor.y - 1, meteor.h, meteor.hsv.hue, meteor.hsv.saturation, meteor.hsv.value });
+            ++n;
+        }
+    }
     MeteorsGatherParams params{ 2, MeteorsEffect, TailLength, ColorScheme, buffer.allowAlpha ? 1 : 0, want_bkg ? 1 : 0, buffer.hashRandomFrameSeed() };
     auto fs = BuildMeteorsFrame(params, parts);
+    if (smooth) {
+        fs->partsNext = std::move(partsNext);
+        fs->smoothFrac = carry / 4.0f;
+    }
 
     IcicleMoveMeteors(buffer, speed);
 
@@ -1080,7 +1204,7 @@ void MeteorsEffect::ImplodeAddMeteors(RenderBuffer& buffer, int ColorScheme, int
     }
 }
 
-void MeteorsEffect::ImplodeMoveMeteors(RenderBuffer& buffer, int mspeed, int xoffset, int yoffset, bool fadeWithDistance)
+void MeteorsEffect::ImplodeMoveMeteors(RenderBuffer& buffer, float mspeed, int xoffset, int yoffset, bool fadeWithDistance)
 {
     MeteorsRenderCache* cache = GetCache(buffer, id);
 
@@ -1118,7 +1242,7 @@ void MeteorsEffect::ImplodeRemoveMeteors(RenderBuffer& buffer, int xoffset, int 
     std::erase_if(cache->meteorsRadial, MeteorHasExpiredImplode(buffer.BufferWi / 2 + truexoffset, buffer.BufferHt / 2 + trueyoffset));
 }
 
-std::unique_ptr<EffectFrameState> MeteorsEffect::AdvanceMeteorsImplode(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int mSpeed, int xoffset, int yoffset, bool fadeWithDistance, int warmupFrames)
+std::unique_ptr<EffectFrameState> MeteorsEffect::AdvanceMeteorsImplode(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int mSpeed, int xoffset, int yoffset, bool fadeWithDistance, int warmupFrames, bool smooth)
 {
     MeteorsRenderCache* cache = GetCache(buffer, id);
 
@@ -1170,7 +1294,9 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::AdvanceMeteorsImplode(RenderBuf
     fs->fadeWithDistance = fadeWithDistance;
 
 
-    ImplodeMoveMeteors(buffer, speed, xoffset, yoffset, fadeWithDistance);
+    // Smooth Motion: step by the exact fraction of a pixel this frame earned
+    // instead of waiting for whole pixels to pile up.
+    ImplodeMoveMeteors(buffer, smooth ? calcEffectStateOffset(mSpeed, buffer) / 4.0f : (float)speed, xoffset, yoffset, fadeWithDistance);
 
     ImplodeRemoveMeteors(buffer, xoffset, yoffset);
     return fs;
@@ -1246,7 +1372,7 @@ void MeteorsEffect::ExplodeAddMeteors(RenderBuffer& buffer, int ColorScheme, int
     }
 }
 
-void MeteorsEffect::ExplodeMoveMeteors(RenderBuffer& buffer, int mspeed, int xoffset, int yoffset, bool fadeWithDistance)
+void MeteorsEffect::ExplodeMoveMeteors(RenderBuffer& buffer, float mspeed, int xoffset, int yoffset, bool fadeWithDistance)
 {
     MeteorsRenderCache* cache = GetCache(buffer, id);
 
@@ -1282,7 +1408,7 @@ void MeteorsEffect::ExplodeRemoveMeteors(RenderBuffer& buffer)
     std::erase_if(cache->meteorsRadial, MeteorHasExpiredExplode(buffer.BufferHt, buffer.BufferWi));
 }
 
-std::unique_ptr<EffectFrameState> MeteorsEffect::AdvanceMeteorsExplode(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int mSpeed, int xoffset, int yoffset, bool fadeWithDistance, int warmupFrames)
+std::unique_ptr<EffectFrameState> MeteorsEffect::AdvanceMeteorsExplode(RenderBuffer& buffer, int ColorScheme, int Count, int Length, int mSpeed, int xoffset, int yoffset, bool fadeWithDistance, int warmupFrames, bool smooth)
 {
     MeteorsRenderCache* cache = GetCache(buffer, id);
 
@@ -1337,7 +1463,7 @@ std::unique_ptr<EffectFrameState> MeteorsEffect::AdvanceMeteorsExplode(RenderBuf
     fs->fadeWithDistance = fadeWithDistance;
 
 
-    ExplodeMoveMeteors(buffer, speed, xoffset, yoffset, fadeWithDistance);
+    ExplodeMoveMeteors(buffer, smooth ? calcEffectStateOffset(mSpeed, buffer) / 4.0f : (float)speed, xoffset, yoffset, fadeWithDistance);
 
     ExplodeRemoveMeteors(buffer);
     return fs;
