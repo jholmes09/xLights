@@ -51,6 +51,7 @@
 #include "app-shell/AboutDialog.h"
 #include "diagnostics/PerfDiagnostics.h"
 #include "sequencer/BatchRenderDialog.h"
+#include "sequencer/TimingTapTestDialog.h"
 #include "CachedFileDownloader.h"
 #include "shared/dialogs/CheckboxSelectDialog.h"
 #include "shared/dialogs/OptionChooser.h"
@@ -1399,6 +1400,16 @@ xLightsFrame::xLightsFrame(wxWindow* parent, int ab, wxWindowID id, bool renderO
     // covers both the toolbar background and its buttons.
     EffectsToolBar->Bind(wxEVT_CONTEXT_MENU, &xLightsFrame::OnEffectsToolBarContextMenu, this);
     BuildToolbarsMenu();
+
+    {
+        int idx = Menu1->GetMenuItems().IndexOf(MenuItemCheckSequence);
+        wxMenuItem* tapTest = Menu1->Insert(idx == wxNOT_FOUND ? 0 : idx + 1, wxID_ANY, _("Timing Tap Test..."),
+                                            _("Measures how late timing marks tapped during playback land, and why."));
+        Bind(wxEVT_MENU, [this](wxCommandEvent&) {
+            TimingTapTestDialog dlg(this, this);
+            dlg.ShowModal();
+        }, tapTest->GetId());
+    }
 
     Notebook1->SetArtProvider(new wxAuiGenericTabArt());
 

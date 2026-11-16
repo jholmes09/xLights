@@ -582,6 +582,8 @@
 		<Unit filename="../src-ui-wx/import_export/SeqFileUtilities.cpp" />
 		<Unit filename="../src-ui-wx/sequencer/SeqSettingsDialog.cpp" />
 		<Unit filename="../src-ui-wx/sequencer/SeqSettingsDialog.h" />
+		<Unit filename="../src-ui-wx/sequencer/TimingTapTestDialog.cpp" />
+		<Unit filename="../src-ui-wx/sequencer/TimingTapTestDialog.h" />
 		<Unit filename="../src-ui-wx/sequencer/SequenceFacesPanel.cpp" />
 		<Unit filename="../src-ui-wx/sequencer/SequenceFacesPanel.h" />
 		<Unit filename="../src-core/render/SequenceData.cpp" />

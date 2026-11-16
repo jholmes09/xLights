@@ -1127,6 +1127,8 @@ public:
     [[nodiscard]] bool IsRenderBell() const { return _renderBellEnabled; }
     void SetRenderBell(bool b) { _renderBellEnabled = b; }
     [[nodiscard]] int TimingTapOffsetMS() const { return _timingTapOffsetMS; }
+    [[nodiscard]] double GetPlaySpeed() const { return playSpeed; }
+    void StopPlayback() { StopNow(); }
     void SetTimingTapOffsetMS(int ms) { _timingTapOffsetMS = ms; }
     int GetTimingTapTimeMS();
     [[nodiscard]] bool IsPasteAsLayers() const { return _pasteAsLayers; }

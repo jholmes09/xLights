@@ -11,6 +11,9 @@ Issue Tracker is found here: www.github.com/xLightsSequencer/xLights/issues
 XLIGHTS/NUTCRACKER RELEASE NOTES
 ---------------------------------
 2026.18  September ??, 2026
+    -enh (jholmes)               Tools > Timing Tap Test: measures how late timing marks tapped during playback
+                                 land, tells sound-output delay apart from tapping habit, and can set the
+                                 timing tap offset to cancel it
     -enh (jholmes)               Optional performance diagnostics (perf_diagnostics=true in special.options):
                                  logs UI freezes (on Windows with where the program was stuck), render timing
                                  reports, slow open/save/backup, and show files that are online-only in
