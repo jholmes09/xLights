@@ -204,10 +204,10 @@ public:
             Update();
         }
     }
-    void SetText(const wxString& big, const wxString& small) {
-        if (big != _big || small != _small) {
-            _big = big;
-            _small = small;
+    void SetText(const wxString& headline, const wxString& detail) {
+        if (headline != _big || detail != _small) {
+            _big = headline;
+            _small = detail;
             Refresh();
         }
     }
