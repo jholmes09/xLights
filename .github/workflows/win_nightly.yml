@@ -1,8 +1,6 @@
 name: Windows Nightly
 
 on:
-  schedule:
-    - cron: '0 5 * * *' # run at 5 AM UTC
   workflow_dispatch:
 
 jobs:
