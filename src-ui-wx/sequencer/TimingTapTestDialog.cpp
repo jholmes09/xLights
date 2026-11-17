@@ -140,6 +140,7 @@ TimingTapTestDialog::Result Score(const std::vector<long>& beats, const std::vec
             resid.push_back((int)rr);
         }
     }
+    r.taps = (int)resid.size();
     if ((int)resid.size() < kMinTaps) {
         return r;
     }
@@ -435,7 +436,10 @@ void TimingTapTestDialog::StartTest(Test t) {
         _scoredBeats.assign(_beats.begin() + kCountIn, _beats.end());
         _panel->SetLit(false);
         _panel->SetText(_("Tap with each click"), _("Four low clicks to get the beat, then keep tapping"));
-        _clickAudio->Play(0, lengthMS);
+        // Seek + Play, as sequencer playback does: on SDL a length-limited Play
+        // leaves Tell() reporting the wrong position.
+        _clickAudio->Seek(0);
+        _clickAudio->Play();
         _endMS = lengthMS + 300;
     } else if (t == Test::Flashes) {
         _scoredBeats.assign(_beats.begin() + kCountIn, _beats.end());
@@ -475,7 +479,8 @@ void TimingTapTestDialog::StartTest(Test t) {
         _songAudio = _frame->GetPlaybackAudio();
         _panel->SetLit(false);
         _panel->SetText(wxString::Format(_("Tap the beats of '%s'"), _songTrack), _("Playing the song"));
-        _songAudio->Play(_songStartMS, lengthMS);
+        _songAudio->Seek(_songStartMS);
+        _songAudio->Play();
         _endMS = lengthMS + 300;
     }
 
@@ -590,7 +595,9 @@ void TimingTapTestDialog::FinishTest(bool cancelled) {
         _panel->SetText(wxString::Format(_("Taps landed %s"), LateEarly(r.offsetMS)),
                         wxString::Format(_("%d taps counted, typically within %d ms of each other"), r.taps, r.spreadMS));
     } else {
-        _panel->SetText(_("Not enough taps on the beat"), _("Try again, keeping a steady tap all the way through"));
+        _panel->SetText(_("Not enough taps on the beat"),
+                        wxString::Format(_("%d taps heard, %d close to a beat. Try again, tapping steadily all the way through"),
+                                         (int)taps.size(), r.taps));
     }
     UpdateResults();
     UpdateButtons();
