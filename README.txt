@@ -14,6 +14,7 @@ XLIGHTS/NUTCRACKER RELEASE NOTES
     -enh (jholmes)               Tools > Timing Tap Test: measures how late timing marks tapped during playback
                                  land, tells sound-output delay apart from tapping habit, and can set the
                                  timing tap offset to cancel it
+    -bug (jholmes)               Selecting a Single Strand effect no longer freezes xLights for seconds on Windows
     -enh (jholmes)               Optional performance diagnostics (perf_diagnostics=true in special.options):
                                  logs UI freezes (on Windows with where the program was stuck), render timing
                                  reports, slow open/save/backup, and show files that are online-only in

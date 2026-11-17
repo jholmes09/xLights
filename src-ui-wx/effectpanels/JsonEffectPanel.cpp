@@ -2112,9 +2112,20 @@ void JsonEffectPanel::SetRenderableEffect(RenderableEffect* eff) {
             auto options = eff->GetSettingOptions(id);
             if (!options.empty()) {
                 wxString selection = info.choice->GetStringSelection();
-                info.choice->Clear();
-                for (const auto& opt : options) {
-                    info.choice->Append(wxString(opt));
+                bool same = info.choice->GetCount() == options.size();
+                for (size_t i = 0; same && i < options.size(); i++) {
+                    same = info.choice->GetString((unsigned int)i) == wxString(options[i]);
+                }
+                if (!same) {
+                    // One bulk insert: appending item by item makes wxMSW re-measure
+                    // the whole list after every item, freezing the UI for seconds
+                    // on the ~180 Single Strand FX names.
+                    wxArrayString items;
+                    items.reserve(options.size());
+                    for (const auto& opt : options) {
+                        items.Add(wxString(opt));
+                    }
+                    info.choice->Set(items);
                 }
                 if (!selection.empty()) {
                     info.choice->SetStringSelection(selection);
